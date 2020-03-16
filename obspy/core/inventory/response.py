@@ -219,8 +219,8 @@ class PolesZerosResponseStage(ResponseStage):
                  stage_gain_frequency, input_units, output_units,
                  pz_transfer_function_type,
                  normalization_frequency, zeros, poles,
-                 normalization_factor=None, resource_id=None,
-                 resource_id2=None, name=None, input_units_description=None,
+                 normalization_factor=None, resource_id=None, resource_id2=None,
+                 name=None, input_units_description=None,
                  output_units_description=None, description=None,
                  decimation_input_sample_rate=None, decimation_factor=None,
                  decimation_offset=None, decimation_delay=None,
@@ -391,17 +391,18 @@ class PolesZerosResponseStage(ResponseStage):
             return None
 
         A0 = 1.0 + (1j * 0.0)
-        if self.pz_transfer_function_type == "LAPLACE (HERTZ)":
+        # TODO: ensure that this coercion to float is valid
+        if self.transfer_function_type == "LAPLACE (HERTZ)":
             s = 1j * float(self.normalization_frequency)
-        elif self.pz_transfer_function_type == "LAPLACE (RADIANS/SECOND)":
+        elif self.transfer_function_type == "LAPLACE (RADIANS/SECOND)":
             s = 1j * 2 * pi * float(self.normalization_frequency)
         else:
             print("Don't know how to calculate normalization factor "
                   "for z-transform poles and zeros!")
             return False
-        for p in self._poles:
+        for p in self.poles:
             A0 *= (s - p)
-        for z in self._zeros:
+        for z in self.zeros:
             A0 /= (s - z)
 
         return abs(A0)
@@ -608,7 +609,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
         elif self.cf_transfer_function_type == "ANALOG (HERTZ)":
             # XXX: Untested so far!
             resp = scipy.signal.freqs(
-                b=self.numerator, a=[1.0], worN=resp_frequencies)[1]
+                b=self.numerator, a=[1.0], worN=frequencies)[1]
             gain_freq_amp = np.abs(scipy.signal.freqs(
                 b=self.numerator, a=[1.0],
                 worN=[self.stage_gain_frequency])[1])
@@ -628,19 +629,9 @@ class CoefficientsTypeResponseStage(ResponseStage):
         # frequency. I'm not sure this is entirely correct, as the digitizer
         # will likely just apply the FIR filter and send the data along. But
         # evalresp does this and thus so do we.
-        if self.cf_transfer_function_type != 'DIGITAL':
-            amp *= self.stage_gain / gain_freq_amp
+        amp *= self.stage_gain / gain_freq_amp
 
-        # If "fast", then interpolate the amplitude and phase onto the
-        # originally requested frequencies.
-        if len(frequencies) > 10000 and fast:
-            amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                    resp_frequencies, amp, k=2)(frequencies)
-            phase = scipy.interpolate.InterpolatedUnivariateSpline(
-                    resp_frequencies, phase, k=2)(frequencies)
-            final_resp = np.zeros_like(frequencies) + 0j
-        else:
-            final_resp = np.empty_like(resp)
+        final_resp = np.empty_like(resp)
         final_resp.real = amp * np.cos(phase)
         final_resp.imag = amp * np.sin(phase)
 
@@ -1137,8 +1128,10 @@ class Response(ComparingObject):
         else:
             raise ValueError("Unknown output '%s'." % output)
 
+        apply_sens = False
+        if start_stage is None and end_stage is None:
+            apply_sens = True
         # Convert to 0-based indexing.
-        # (End stage stays the same because it's the exclusive bound)
         if start_stage is None:
             start_stage = 0
         else:

@@ -371,13 +371,9 @@ def paz_to_freq_resp(poles, zeros, scale_fac, t_samp=None, nfft=None,
     :type t_samp: float
     :param t_samp: Sampling interval in seconds
     :type nfft: int
-    :param nfft: Number of FFT points of signal which needs correction.
-        If not specified, the length of the frequencies parameter will be used.
-        If specified, the value t_samp is required.
-        If the frequencies parameter is specified, both this and t_samp are ignored.
+    :param nfft: Number of FFT points of signal which needs correction
     :type frequencies: list of float
     :param frequencies: Discrete frequencies to get resp values for.
-        If nfft and t_samp are not specified, this value is required.
     :type freq: bool
     :param freq: If true, returns tuple of resp result with freq array input (i.e., x-values)
     :rtype: :class:`numpy.ndarray` complex128
