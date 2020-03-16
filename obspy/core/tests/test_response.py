@@ -314,10 +314,10 @@ class TestResponse:
         zeros = [2 + 3j, 2, 3j]
         stage = PolesZerosResponseStage(
             1, 1, 1, "", "", "LAPLACE (HERTZ)", 1, zeros, poles)
-        assert type(stage.zeros[0]) == ComplexWithUncertainties
-        assert type(stage.poles[0]) == ComplexWithUncertainties
-        assert stage.poles == poles
-        assert stage.zeros == zeros
+        self.assertEqual(ComplexWithUncertainties, type(stage.zeros[0]))
+        self.assertEqual(ComplexWithUncertainties, type(stage.poles[0]))
+        self.assertEqual(poles, stage.poles)
+        self.assertEqual(zeros, stage.zeros)
 
     def test_response_list_stage(self):
         """
@@ -590,9 +590,9 @@ class TestResponse:
         See #2171.
         """
         inv = read_inventory(os.path.join(self.data_dir, "IM_I53H1_BDF.xml"))
-        cha_response = inv[0][0][0].response
-        freq_resp = cha_response.get_evalresp_response_for_frequencies([0.0])
-        assert freq_resp == 0.0 + 0.0j
+        self.assertEqual(
+            0.0 + 0.0j,
+            inv[0][0][0].response.get_evalresp_response_for_frequencies([0.0])[0])
         np.testing.assert_allclose(
             inv[0][0][0].response.get_evalresp_response_for_frequencies(
                 [0.1, 1.0, 10.0]),
