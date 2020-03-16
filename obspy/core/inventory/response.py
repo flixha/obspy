@@ -391,7 +391,6 @@ class PolesZerosResponseStage(ResponseStage):
             return None
 
         A0 = 1.0 + (1j * 0.0)
-        # TODO: ensure that this coercion to float is valid
         if self.pz_transfer_function_type == "LAPLACE (HERTZ)":
             s = 1j * float(self.normalization_frequency)
         elif self.pz_transfer_function_type == "LAPLACE (RADIANS/SECOND)":
