@@ -1127,10 +1127,9 @@ class Response(ComparingObject):
         else:
             raise ValueError("Unknown output '%s'." % output)
 
-        apply_sens = False
-        if start_stage is None and end_stage is None:
-            apply_sens = True
+        apply_sens = True
         # Convert to 0-based indexing.
+        # (End stage stays the same because it's the exclusive bound)
         if start_stage is None:
             start_stage = 0
         else:
