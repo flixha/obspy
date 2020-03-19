@@ -116,7 +116,6 @@ class TestResponse:
         for filename in filenames:
             xml_filename = os.path.join(self.data_dir,
                                         filename + os.path.extsep + "xml")
-            print(xml_filename)
             inv = read_inventory(xml_filename)
             resp = inv[0][0][0].response
 
