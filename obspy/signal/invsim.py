@@ -391,7 +391,7 @@ def paz_to_freq_resp(poles, zeros, scale_fac, t_samp=None, nfft=None,
         f = np.linspace(0, fy, n + 1)
     else:
         f = frequencies
-    _w, h = scipy.signal.freqs(b, a, f * 2 * np.pi)
+    _w, h = scipy.signal.freqz(numer, denom, f * 2 * np.pi)
     if freq:
         return h, f
     return h
