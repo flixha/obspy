@@ -436,32 +436,8 @@ def digital_filter_to_freq_resp(numer, denom, t_samp=None, nfft=None,
     return h
 
 
-def digital_filter_to_freq_resp(numer, denom, t_samp=None, nfft=None,
-                                frequencies=None, freq=False):
-    """
-    Convert a digital filter to frequency response.
-
-    The output contains the frequency zero which is the offset of the trace.
-
-    :type numer: list of complex
-    :param numer: The numerator of a linear filter as coefficients
-    :type denom: list of complex
-    :param denom: The denominator of a linear filter as coefficients
-    :type t_samp: float
-    :param t_samp: Sampling interval in seconds
-    :type nfft: int
-    :param nfft: Number of FFT points of signal which needs correction.
-        If not specified, the length of the frequencies parameter will be used.
-        If specified, the value t_samp is required.
-        If the frequencies parameter is specified, both this and t_samp are ignored.
-    :type frequencies: list of float
-    :param frequencies: Discrete frequencies to get resp values for.
-        If nfft and t_samp are not specified, this value is required.
-    :type freq: bool
-    :param freq: If true, returns tuple of resp result with freq array input (i.e., x-values)
-    :rtype: :class:`numpy.ndarray` complex128
-    :return: Frequency response of filter of length nfft
-    """
+def fir_to_freq_resp(numer, denom, t_samp=None, nfft=None,
+                         frequencies=None, freq=False):
     if frequencies is None:
         n = nfft // 2
         fy = 1 / (t_samp * 2.0)
