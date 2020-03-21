@@ -629,7 +629,6 @@ class CoefficientsTypeResponseStage(ResponseStage):
         # will likely just apply the FIR filter and send the data along. But
         # evalresp does this and thus so do we.
         amp *= self.stage_gain / gain_freq_amp
-
         final_resp = np.empty_like(resp)
         final_resp.real = amp * np.cos(phase)
         final_resp.imag = amp * np.sin(phase)
