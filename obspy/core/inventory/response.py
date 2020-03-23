@@ -30,7 +30,6 @@ from obspy.core.util.obspy_types import (ComplexWithUncertainties,
                                          Enum)
 
 from .util import Angle, Frequency
-from obspy.signal.invsim import digital_filter_to_freq_resp
 
 class ResponseStage(ComparingObject):
     """
@@ -754,7 +753,7 @@ class FIRResponseStage(ResponseStage):
                  decimation_offset=None, decimation_delay=None,
                  decimation_correction=None):
         self._symmetry = symmetry
-        self.coefficients = coefficients or []
+        self._coefficients = coefficients or []
         super(FIRResponseStage, self).__init__(
             stage_sequence_number=stage_sequence_number,
             input_units=input_units,
@@ -814,26 +813,8 @@ class FIRResponseStage(ResponseStage):
         else:
             # This is the full case
             coefficients = self._coefficients
-        sr = self.decimation_input_sample_rate
-        frequencies = frequencies / sr * np.pi * 2.0
-        # Compute response for a limited number of frequencies and interpolate
-        # inbetween - 10000 appears fine for high precision and speed.
-        if len(frequencies) > 10000 and fast:
-            resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
-                                           10000, dtype=np.float64)
-            resp = scipy.signal.freqz(b=coefficients, a=[1.],
-                                      worN=resp_frequencies)[1]
-            amp = np.abs(resp) * self.stage_gain + 0j
-            amp = amp.real
-            amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                    resp_frequencies, amp, k=2)(frequencies)
-        else:
-            resp = scipy.signal.freqz(b=coefficients, a=[1.],
-                                      worN=frequencies)[1]
-            # Here we zero the phase (FIR) and return the amplitude
-            amp = np.abs(resp) * self.stage_gain + 0j
-            amp = amp.real
-        return amp
+        return digital_filter_to_freq_resp([1.], coefficients,
+                                           frequencies=frequencies) * self.stage_gain
 
 
 class PolynomialResponseStage(ResponseStage):
