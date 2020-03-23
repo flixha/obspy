@@ -627,7 +627,8 @@ class CoefficientsTypeResponseStage(ResponseStage):
         # frequency. I'm not sure this is entirely correct, as the digitizer
         # will likely just apply the FIR filter and send the data along. But
         # evalresp does this and thus so do we.
-        amp *= self.stage_gain / gain_freq_amp
+        if self.cf_transfer_function_type != 'DIGITAL':
+            amp *= self.stage_gain / gain_freq_amp
         final_resp = np.empty_like(resp)
         final_resp.real = amp * np.cos(phase)
         final_resp.imag = amp * np.sin(phase)
