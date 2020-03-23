@@ -189,13 +189,11 @@ class TestResponse:
             print(xml_filename)
             for unit in units:
                 for x in range(1, len(resp.response_stages)+1):
-                    print(type(resp.response_stages[x - 1]))
                     """
                     if not isinstance(resp.response_stages[x-1], FIRResponseStage):
-                        print("skipping...")
                         continue
                     """
-
+                    print("Type of stage ", str(x) + ":", type(resp.response_stages[x-1]))
                     xml_resp = resp.get_evalresp_response_for_frequencies(
                         frequencies=freqs, start_stage=x, end_stage=x, output=unit)
                     new_resp = resp.get_response(
