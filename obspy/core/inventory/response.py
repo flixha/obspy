@@ -30,7 +30,6 @@ from obspy.core.util.obspy_types import (ComplexWithUncertainties,
                                          Enum)
 
 from .util import Angle, Frequency
-from obspy.signal.invsim import digital_filter_to_freq_resp
 
 class ResponseStage(ComparingObject):
     """
