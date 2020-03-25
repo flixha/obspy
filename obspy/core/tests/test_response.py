@@ -20,9 +20,9 @@ import scipy.interpolate
 
 from obspy import UTCDateTime, read_inventory
 from obspy.core.inventory.response import (
-    _pitick2latex, Response,
-    PolesZerosResponseStage, PolynomialResponseStage)
-from obspy.core.util import MATPLOTLIB_VERSION
+    _pitick2latex, PolesZerosResponseStage, PolynomialResponseStage, Response,
+    ResponseListResponseStage, ResponseListElement, InstrumentSensitivity)
+from obspy.core.util import CatchAndAssertWarnings
 from obspy.core.util.misc import CatchOutput
 from obspy.core.util.obspy_types import ComplexWithUncertainties
 from obspy.core.util.testing import WarningsCapture
@@ -110,7 +110,8 @@ class TestResponse:
 
     def test_get_response_regression(self):
         units = ["DISP", "VEL", "ACC"]
-        filenames = ["AU.MEEK", "IRIS_single_channel_with_response", "XM.05", "IU_ANMO_00_BHZ"]
+        filenames = ["AU.MEEK", "IRIS_single_channel_with_response",
+                     "XM.05", "IU_ANMO_00_BHZ"]
 
         for filename in filenames:
             xml_filename = os.path.join(self.data_dir,
@@ -139,7 +140,8 @@ class TestResponse:
             print("passed:", xml_filename)
 
     def test_get_response_per_stage(self):
-        filenames = ["AU.MEEK", "IRIS_single_channel_with_response", "XM.05", "IU_ANMO_00_BHZ"]
+        filenames = ["AU.MEEK", "IU_ANMO_00_BHZ",
+                     "IRIS_single_channel_with_response", "XM.05"]
         units = ["DISP", "VEL", "ACC"]
 
         for filename in filenames:
@@ -151,27 +153,64 @@ class TestResponse:
             print(xml_filename)
             for unit in units:
                 for x in range(1, len(resp.response_stages)+1):
-                    """
-                    if not isinstance(resp.response_stages[x-1], FIRResponseStage):
-                        continue
-                    """
-                    print("Type of stage ", str(x) + ":", type(resp.response_stages[x-1]))
+                    print("Type of stage ", str(x) +
+                          ":", type(resp.response_stages[x-1]))
                     xml_resp = resp.get_evalresp_response_for_frequencies(
-                        frequencies=freqs, start_stage=x, end_stage=x, output=unit)
+                        frequencies=freqs, start_stage=x,
+                        end_stage=x, output=unit)
                     new_resp = resp.get_response(
-                        frequencies=freqs, start_stage=x, end_stage=x, output=unit)
+                        frequencies=freqs, start_stage=x,
+                        end_stage=x, output=unit)
 
                     np.testing.assert_allclose(np.abs(xml_resp),
                                                np.abs(new_resp), rtol=1E-5)
-                    # Phase starts to differ slightly before Nyquist and quite a
-                    # bit after. Evalresp appears to have some Gibb's artifacts
-                    # and scipy's solution does look better.
+                    # Phase starts to differ slightly before
+                    # Nyquist and quite a bit after. Evalresp
+                    # appears to have some Gibb's artifacts and scipy's
+                    # solution does look better.
                     np.testing.assert_allclose(
                         np.unwrap(np.angle(xml_resp))[:800],
                         np.unwrap(np.angle(new_resp))[:800],
                         rtol=1E-2, atol=2E-2)
 
-                    print("Succeeded with case for stage no.", x, "with units", unit)
+                    print("Succeeded with case for stage no.", x,
+                          "with units", unit)
+
+    def test_get_response_per_stage(self):
+        filenames = ["IRIS_single_channel_with_response", "XM.05", "IU_ANMO_00_BHZ", "AU.MEEK"]
+        units = ["DISP", "VEL", "ACC"]
+
+        for filename in filenames:
+            xml_filename = os.path.join(self.data_dir,
+                                        filename + os.path.extsep + "xml")
+            inv = read_inventory(xml_filename)
+            resp = inv[0][0][0].response
+            freqs = np.logspace(-2, 2, 1000)
+            print(xml_filename)
+            for unit in units:
+                for x in range(1, len(resp.response_stages)+1):
+                    print("Type of stage ", str(x) +
+                          ":", type(resp.response_stages[x-1]))
+                    xml_resp = resp.get_evalresp_response_for_frequencies(
+                        frequencies=freqs, start_stage=x,
+                        end_stage=x, output=unit)
+                    new_resp = resp.get_response(
+                        frequencies=freqs, start_stage=x,
+                        end_stage=x, output=unit)
+
+                    np.testing.assert_allclose(np.abs(xml_resp),
+                                               np.abs(new_resp), rtol=1E-5)
+                    # Phase starts to differ slightly before
+                    # Nyquist and quite a bit after. Evalresp
+                    # appears to have some Gibb's artifacts and scipy's
+                    # solution does look better.
+                    np.testing.assert_allclose(
+                        np.unwrap(np.angle(xml_resp))[:800],
+                        np.unwrap(np.angle(new_resp))[:800],
+                        rtol=1E-2, atol=2E-2)
+
+                    print("Succeeded with case for stage no.", x,
+                          "with units", unit)
 
     def test_get_response_disp_vel_acc(self):
         units = ["DISP", "VEL", "ACC"]
