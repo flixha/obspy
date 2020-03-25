@@ -18,6 +18,7 @@ from math import pi
 import warnings
 
 import numpy as np
+import scipy
 
 from .. import compatibility
 from obspy.core.util.base import ComparingObject
@@ -30,6 +31,7 @@ from obspy.core.util.obspy_types import (ComplexWithUncertainties,
                                          Enum)
 
 from .util import Angle, Frequency
+
 
 class ResponseStage(ComparingObject):
     """
@@ -127,15 +129,15 @@ class ResponseStage(ComparingObject):
         self.description = description
         self.decimation_input_sample_rate = \
             Frequency(decimation_input_sample_rate) \
-                if decimation_input_sample_rate is not None else None
+            if decimation_input_sample_rate is not None else None
         self.decimation_factor = decimation_factor
         self.decimation_offset = decimation_offset
         self.decimation_delay = \
             FloatWithUncertaintiesAndUnit(decimation_delay) \
-                if decimation_delay is not None else None
+            if decimation_delay is not None else None
         self.decimation_correction = \
             FloatWithUncertaintiesAndUnit(decimation_correction) \
-                if decimation_correction is not None else None
+            if decimation_correction is not None else None
 
     def __str__(self):
         ret = (
@@ -218,8 +220,8 @@ class PolesZerosResponseStage(ResponseStage):
                  stage_gain_frequency, input_units, output_units,
                  pz_transfer_function_type,
                  normalization_frequency, zeros, poles,
-                 normalization_factor=None, resource_id=None, resource_id2=None,
-                 name=None, input_units_description=None,
+                 normalization_factor=None, resource_id=None,
+                 resource_id2=None, name=None, input_units_description=None,
                  output_units_description=None, description=None,
                  decimation_input_sample_rate=None, decimation_factor=None,
                  decimation_offset=None, decimation_delay=None,
@@ -346,16 +348,19 @@ class PolesZerosResponseStage(ResponseStage):
         """
         # Has to be imported here for now to avoid circular imports.
         from obspy.signal.invsim import paz_to_freq_resp
+        from obspy.signal.util import next_pow_2
         if len(frequencies) > 10000 and fast:
             resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
                                            10000, dtype=np.float64)
         else:
             resp_frequencies = frequencies
 
+        n_freq = len(resp_frequencies)
+        nfft = next_pow_2(2 * n_freq)
         resp = paz_to_freq_resp(
             poles=np.array(self._poles, dtype=np.complex128),
             zeros=np.array(self._zeros, dtype=np.complex128),
-            scale_fac=self.normalization_factor,
+            scale_fac=self.normalization_factor, nfft=nfft,
             frequencies=resp_frequencies, freq=False) * self.stage_gain
 
         # If required, do interpolation of amplitude and phase of the response
@@ -607,7 +612,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
         elif self.cf_transfer_function_type == "ANALOG (HERTZ)":
             # XXX: Untested so far!
             resp = scipy.signal.freqs(
-                b=self.numerator, a=[1.0], worN=frequencies)[1]
+                b=self.numerator, a=[1.0], worN=resp_frequencies)[1]
             gain_freq_amp = np.abs(scipy.signal.freqs(
                 b=self.numerator, a=[1.0],
                 worN=[self.stage_gain_frequency])[1])
@@ -629,7 +634,17 @@ class CoefficientsTypeResponseStage(ResponseStage):
         # evalresp does this and thus so do we.
         if self.cf_transfer_function_type != 'DIGITAL':
             amp *= self.stage_gain / gain_freq_amp
-        final_resp = np.empty_like(resp)
+
+        # If "fast", then interpolate the amplitude and phase onto the
+        # originally requested frequencies.
+        if len(frequencies) > 10000 and fast:
+            amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, amp, k=2)(frequencies)
+            phase = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, phase, k=2)(frequencies)
+            final_resp = np.zeros_like(frequencies) + 0j
+        else:
+            final_resp = np.empty_like(resp)
         final_resp.real = amp * np.cos(phase)
         final_resp.imag = amp * np.sin(phase)
 
@@ -754,7 +769,7 @@ class FIRResponseStage(ResponseStage):
                  decimation_offset=None, decimation_delay=None,
                  decimation_correction=None):
         self._symmetry = symmetry
-        self._coefficients = coefficients or []
+        self.coefficients = coefficients or []
         super(FIRResponseStage, self).__init__(
             stage_sequence_number=stage_sequence_number,
             input_units=input_units,
@@ -814,8 +829,26 @@ class FIRResponseStage(ResponseStage):
         else:
             # This is the full case
             coefficients = self._coefficients
-        return digital_filter_to_freq_resp([1.], coefficients,
-                                           frequencies=frequencies) * self.stage_gain
+        sr = self.decimation_input_sample_rate
+        frequencies = frequencies / sr * np.pi * 2.0
+        # Compute response for a limited number of frequencies and interpolate
+        # inbetween - 10000 appears fine for high precision and speed.
+        if len(frequencies) > 10000 and fast:
+            resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
+                                           10000, dtype=np.float64)
+            resp = scipy.signal.freqz(b=coefficients, a=[1.],
+                                      worN=resp_frequencies)[1]
+            amp = np.abs(resp) * self.stage_gain + 0j
+            amp = amp.real
+            amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, amp, k=2)(frequencies)
+        else:
+            resp = scipy.signal.freqz(b=coefficients, a=[1.],
+                                      worN=frequencies)[1]
+            # Here we zero the phase (FIR) and return the amplitude
+            amp = np.abs(resp) * self.stage_gain + 0j
+            amp = amp.real
+        return amp
 
 
 class PolynomialResponseStage(ResponseStage):
@@ -1108,7 +1141,6 @@ class Response(ComparingObject):
         else:
             raise ValueError("Unknown output '%s'." % output)
 
-        apply_sens = True
         # Convert to 0-based indexing.
         # (End stage stays the same because it's the exclusive bound)
         if start_stage is None:
@@ -1298,7 +1330,7 @@ class Response(ComparingObject):
 
         # Nothing might be set - just return in that case.
         if set(itertools.chain.from_iterable(v.values()
-                                             for v in sampling_rates.values())) == {None}:
+               for v in sampling_rates.values())) == {None}:
             return sampling_rates
 
         # Find the first set input sampling rate. The output sampling rate
@@ -1466,7 +1498,6 @@ class Response(ComparingObject):
             # XXX is this safe enough, or should we lookup the stage sequence
             # XXX number explicitly?
             frequency = self.response_stages[0].normalization_frequency
-        self.instrument_sensitivity.frequency = float(frequency)
         response_at_frequency = self._call_eval_resp_for_frequencies(
             frequencies=[frequency], output=output,
             hide_sensitivity_mismatch_warning=True)[0][0]
