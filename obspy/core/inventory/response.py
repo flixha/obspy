@@ -177,9 +177,7 @@ class ResponseStage(ComparingObject):
 
     def get_response(self, frequencies):
         # if a response stage isn't a subclass then it's likely a gain stage.
-        # just return a constant 1; the response is scaled so trying to
-        # apply the gain here will cause to be factored out later
-        return 1.
+        return np.ones_like(frequencies) * self.stage_gain
 
 
 class PolesZerosResponseStage(ResponseStage):
@@ -420,8 +418,8 @@ class CoefficientsTypeResponseStage(ResponseStage):
         # Set the Coefficients type specific attributes. Special cases are
         # handled by properties.
         self.cf_transfer_function_type = cf_transfer_function_type
-        self.numerator = numerator
-        self.denominator = denominator
+        self._numerator = numerator
+        self._denominator = denominator
         super(CoefficientsTypeResponseStage, self).__init__(
             stage_sequence_number=stage_sequence_number,
             input_units=input_units,
@@ -458,7 +456,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
 
     @numerator.setter
     def numerator(self, value):
-        if value == []:
+        if not value:
             self._numerator = []
             return
         value = list(value) if isinstance(
@@ -477,7 +475,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
 
     @denominator.setter
     def denominator(self, value):
-        if value == []:
+        if not value:
             self._denominator = []
             return
         value = list(value) if isinstance(
@@ -538,14 +536,25 @@ class CoefficientsTypeResponseStage(ResponseStage):
         # digital, this may not be the case
         if self.cf_transfer_function_type == "DIGITAL":
             if len(self.denominator) == 0:
-                fil_a = [1.0]
+                fir = True
+                resp = scipy.signal.freqz(b=self.numerator, a=[1.], worN=frequencies)[1]
+
+                gain_freq_amp = np.abs(scipy.signal.freqz(
+                    b=self.numerator, a=[1.], worN=[self.stage_gain_frequency])[1])
             else:
-                fil_a = self.denominator
-            resp = scipy.signal.freqz(
-                b=self.numerator, a=fil_a, worN=frequencies)[1]
-            gain_freq_amp = np.abs(scipy.signal.freqz(
-                b=self.numerator, a=fil_a,
-                worN=[self.stage_gain_frequency])[1])
+                resp = np.zeros_like(frequencies) + 0j
+                w = frequencies
+                for idx, num in enumerate(self.numerator):
+                    resp += num * (np.cos(-(idx) * w) + np.sin(-idx * w) * 1j)
+                amp = abs(resp)
+                phase = np.arctan2(resp.imag, resp.real)
+                resp = np.zeros_like(frequencies) + 0j
+                for idx, den in enumerate(self.denominator):
+                    resp += den * (np.cos(-idx * w) + np.sin(-idx * w) * 1j)
+                amp /= abs(resp)
+                phase -= np.arctan2(resp.imag, resp.real)
+                # return amp
+                return amp * np.cos(phase) + amp * np.sin(phase) * 1j
         elif self.cf_transfer_function_type == "ANALOG (RADIANS/SECOND)":
             # XXX: Untested so far!
             resp = scipy.signal.freqs(
