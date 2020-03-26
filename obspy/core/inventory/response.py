@@ -575,7 +575,11 @@ class CoefficientsTypeResponseStage(ResponseStage):
         if self.cf_transfer_function_type == "DIGITAL":
             if len(self.denominator) == 0:
                 resp = scipy.signal.freqz(b=self.numerator,
+<<<<<<< HEAD
                                           a=[1.], worN=resp_frequencies)[1]
+=======
+                                          a=[1.], worN=frequencies)[1]
+>>>>>>> e2ca0d298 (I implemented the FIR filter and cleaned up some flake8 issues.)
 
                 gain_freq_amp = np.abs(scipy.signal.freqz(
                     b=self.numerator, a=[1.],
@@ -586,7 +590,11 @@ class CoefficientsTypeResponseStage(ResponseStage):
                 # we get the numerator and denominator and do the math
                 # on them in their representation as magnitude and
                 # phase rather than standard complex format
+<<<<<<< HEAD
                 w = resp_frequencies  # rename to be concise and match conventions
+=======
+                w = frequencies  # rename to be concise and match conventions
+>>>>>>> e2ca0d298 (I implemented the FIR filter and cleaned up some flake8 issues.)
 
                 resp = np.zeros_like(w) + 0j
                 for idx, num in enumerate(self.numerator):
@@ -814,10 +822,14 @@ class FIRResponseStage(ResponseStage):
             new_values.append(x)
         self._coefficients = new_values
 
+<<<<<<< HEAD
     def get_response(self, frequencies, fast=True):
         """
         Given Computes the 
         """
+=======
+    def get_response(self, frequencies):
+>>>>>>> e2ca0d298 (I implemented the FIR filter and cleaned up some flake8 issues.)
         # Decimation blockette, e.g. gain only!
         if not len(self._coefficients):
             return np.ones_like(frequencies) * self.stage_gain
@@ -831,6 +843,7 @@ class FIRResponseStage(ResponseStage):
             coefficients = self._coefficients
         sr = self.decimation_input_sample_rate
         frequencies = frequencies / sr * np.pi * 2.0
+<<<<<<< HEAD
         # Compute response for a limited number of frequencies and interpolate
         # inbetween - 10000 appears fine for high precision and speed.
         if len(frequencies) > 10000 and fast:
@@ -848,6 +861,11 @@ class FIRResponseStage(ResponseStage):
             # Here we zero the phase (FIR) and return the amplitude
             amp = np.abs(resp) * self.stage_gain + 0j
             amp = amp.real
+=======
+        resp = scipy.signal.freqz(b=coefficients, a=[1.], worN=frequencies)[1]
+        # Here we zero the phase (FIR) and return the amplitude
+        amp = np.abs(resp) * self.stage_gain + 0j
+>>>>>>> e2ca0d298 (I implemented the FIR filter and cleaned up some flake8 issues.)
         return amp
 
 
