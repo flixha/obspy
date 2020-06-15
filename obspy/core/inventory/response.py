@@ -767,7 +767,10 @@ class FIRResponseStage(ResponseStage):
             new_values.append(x)
         self._coefficients = new_values
 
-    def get_response(self, frequencies):
+    def get_response(self, frequencies, fast=True):
+        """
+        Given Computes the 
+        """
         # Decimation blockette, e.g. gain only!
         if not len(self._coefficients):
             return np.ones_like(frequencies) * self.stage_gain
@@ -781,9 +784,23 @@ class FIRResponseStage(ResponseStage):
             coefficients = self._coefficients
         sr = self.decimation_input_sample_rate
         frequencies = frequencies / sr * np.pi * 2.0
-        resp = scipy.signal.freqz(b=coefficients, a=[1.], worN=frequencies)[1]
-        # Here we zero the phase (FIR) and return the amplitude
-        amp = np.abs(resp) * self.stage_gain + 0j
+        # Compute response for a limited number of frequencies and interpolate
+        # inbetween - 10000 appears fine for high precision and speed.
+        if len(frequencies) > 10000 and fast:
+            resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
+                                           10000, dtype=np.float64)
+            resp = scipy.signal.freqz(b=coefficients, a=[1.],
+                                      worN=resp_frequencies)[1]
+            amp = np.abs(resp) * self.stage_gain + 0j
+            amp = amp.real
+            amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, amp, k=3)(frequencies)
+        else:
+            resp = scipy.signal.freqz(b=coefficients, a=[1.],
+                                      worN=frequencies)[1]
+            # Here we zero the phase (FIR) and return the amplitude
+            amp = np.abs(resp) * self.stage_gain + 0j
+            amp = amp.real
         return amp
 
 
