@@ -376,7 +376,6 @@ class PolesZerosResponseStage(ResponseStage):
             final_resp.imag = amp * np.sin(phase)
         else:
             final_resp = resp
-
         return final_resp
 
     def calc_normalization_factor(self):
@@ -567,6 +566,13 @@ class CoefficientsTypeResponseStage(ResponseStage):
 
         sr = self.decimation_input_sample_rate
         frequencies = frequencies / sr * np.pi * 2.0
+        
+        # Check if interpolation is required so save time for long traces.
+        if len(frequencies) > 10000 and fast:
+            resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
+                                           10000, dtype=np.float64)
+        else:
+            resp_frequencies = frequencies
 
         # Check if interpolation is required so save time for long traces.
         interpolate, resp_frequencies = _check_response_interpolation(
