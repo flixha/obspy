@@ -244,7 +244,8 @@ class Network(BaseNode):
             responses = [cha.response for cha in channels
                          if cha.response is not None]
         if len(responses) > 1:
-            msg = "Found more than one matching response. Returning first."
+            msg = ("Found more than one matching response for '%s' on '%s'. "
+                   "Returning first." % (seed_id, str(datetime)))
             warnings.warn(msg)
         elif len(responses) < 1:
             msg = "No matching response information found."
