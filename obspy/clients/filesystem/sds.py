@@ -194,6 +194,22 @@ class Client(object):
             st.merge(merge)
         return st
 
+    def get_waveforms_bulk(self, bulk):
+        """
+        Reads bulk data from a local SeisComP Data Structure (SDS) directory
+        tree.
+
+        Returns a stream object with with the data requested from the local
+        directory.
+
+        :type bulk: list of tuples
+        :param bulk: Information about the requested data.
+        """
+        st = Stream()
+        for bulk_string in bulk:
+            st += self.get_waveforms(*bulk_string)
+        return st
+
     def _get_filenames(self, network, station, location, channel, starttime,
                        endtime, sds_type=None):
         """
@@ -569,7 +585,9 @@ class Client(object):
             try:
                 network = dict_["network"]
                 station = dict_["station"]
-            except KeyError as e:
+            except (TypeError, KeyError) as e:
+                if isinstance(e, TypeError) and dict_ is not None:
+                    raise
                 msg = (
                     "Failed to extract key from pattern '{}' in path "
                     "'{}': {}").format(pattern_, file_, e)
