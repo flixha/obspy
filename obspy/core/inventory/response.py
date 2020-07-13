@@ -1174,7 +1174,11 @@ class Response(ComparingObject):
             # Displacement -> velocity - acceleration.
             self.core_unit_enum.displacement: 0,
             self.core_unit_enum.velocity: 1,
-            self.core_unit_enum.acceleration: 2}
+            self.core_unit_enum.acceleration: 2,
+            # XXX: Kind of strange but evalresp does the same for these.
+            self.core_unit_enum.volts: 1,
+            self.core_unit_enum.temperature: 0,
+            }
         unit_type = self._get_unit_type(self.response_stages[0].input_units)
         if unit_type not in diff_and_int_map:
             raise ValueError("Cannot convert %s to %s." % (unit_type, output))
