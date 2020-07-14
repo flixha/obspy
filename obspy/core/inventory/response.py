@@ -344,8 +344,6 @@ class PolesZerosResponseStage(ResponseStage):
         Produce the response curve from this stage's data for a given
         range of frequencies
         :param frequencies: Frequency range to get resp curve over
-        :param fast: Indicates whether to speed up calculation through
-            interpolation.
         :return: The curve describing this response stage
         """
         # Has to be imported here for now to avoid circular imports.
@@ -370,9 +368,9 @@ class PolesZerosResponseStage(ResponseStage):
             amp = np.abs(resp)
             phase = np.radians(np.unwrap(np.angle(resp, deg=False))) / np.pi
             amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                resp_frequencies, amp, k=2)(frequencies)
+                    resp_frequencies, amp, k=2)(frequencies)
             phase = scipy.interpolate.InterpolatedUnivariateSpline(
-                resp_frequencies, phase, k=2)(frequencies)
+                    resp_frequencies, phase, k=2)(frequencies)
             final_resp = np.zeros_like(frequencies) + 0j
             final_resp.real = amp * np.cos(phase)
             final_resp.imag = amp * np.sin(phase)
@@ -555,8 +553,6 @@ class CoefficientsTypeResponseStage(ResponseStage):
         Produce the response curve from this coefficient
         response stage for a range of frequencies
         :param frequencies: Frequency range to get resp curve over
-        :param fast: Indicates whether to speed up calculation through
-            interpolation.
         :return: The curve describing this response stage
         """
         # Decimation blockette, e.g. gain only!
@@ -590,9 +586,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
                 # we get the numerator and denominator and do the math
                 # on them in their representation as magnitude and
                 # phase rather than standard complex format
-                
-                # rename to be concise and match conventions
-                w = resp_frequencies
+                w = resp_frequencies  # rename to be concise and match conventions
 
                 resp = np.zeros_like(w) + 0j
                 for idx, num in enumerate(self.numerator):
@@ -822,10 +816,7 @@ class FIRResponseStage(ResponseStage):
 
     def get_response(self, frequencies, fast=True):
         """
-        Given Computes the
-        :param frequencies: Discrete frequencies to calculate response for. 
-        :param fast: Indicates whether to speed up calculation through
-            interpolation.
+        Given Computes the 
         """
         # Decimation blockette, e.g. gain only!
         if not len(self._coefficients):
@@ -1183,11 +1174,7 @@ class Response(ComparingObject):
             # Displacement -> velocity - acceleration.
             self.core_unit_enum.displacement: 0,
             self.core_unit_enum.velocity: 1,
-            self.core_unit_enum.acceleration: 2,
-            # XXX: Kind of strange but evalresp does the same for these.
-            self.core_unit_enum.volts: 1,
-            self.core_unit_enum.temperature: 0,
-            }
+            self.core_unit_enum.acceleration: 2}
         unit_type = self._get_unit_type(self.response_stages[0].input_units)
         if unit_type not in diff_and_int_map:
             raise ValueError("Cannot convert %s to %s." % (unit_type, output))
