@@ -356,13 +356,19 @@ class PolesZerosResponseStage(ResponseStage):
         """
         # Has to be imported here for now to avoid circular imports.
         from obspy.signal.invsim import paz_to_freq_resp
-        if n_frequencies_limit_for_interp is not None:
+        
+        interpolate = False
+        if n_frequencies_limit_for_interp is None:
             if len(frequencies) > n_frequencies_limit_for_interp:
-                resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
-                                               n_frequencies_limit_for_interp,
-                                               dtype=np.float64)
+                interpolate = True
+                
+        if interpolate:
+            resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
+                                            n_frequencies_limit_for_interp,
+                                            dtype=np.float64)
         else:
             resp_frequencies = frequencies
+            
 
         resp = paz_to_freq_resp(
             poles=np.array(self._poles, dtype=np.complex128),
@@ -371,17 +377,16 @@ class PolesZerosResponseStage(ResponseStage):
             frequencies=resp_frequencies, freq=False) * self.stage_gain
 
         # If required, do interpolation of amplitude and phase of the response
-        if n_frequencies_limit_for_interp is not None:
-            if len(frequencies) > n_frequencies_limit_for_interp:
-                amp = np.abs(resp)
-                phase = np.radians(np.unwrap(np.angle(resp, deg=False))) / np.pi
-                amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                    resp_frequencies, amp, k=3)(frequencies)
-                phase = scipy.interpolate.InterpolatedUnivariateSpline(
-                    resp_frequencies, phase, k=3)(frequencies)
-                final_resp = np.zeros_like(frequencies) + 0j
-                final_resp.real = amp * np.cos(phase)
-                final_resp.imag = amp * np.sin(phase)
+        if interpolate:
+            amp = np.abs(resp)
+            phase = np.radians(np.unwrap(np.angle(resp, deg=False))) / np.pi
+            amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                resp_frequencies, amp, k=3)(frequencies)
+            phase = scipy.interpolate.InterpolatedUnivariateSpline(
+                resp_frequencies, phase, k=3)(frequencies)
+            final_resp = np.zeros_like(frequencies) + 0j
+            final_resp.real = amp * np.cos(phase)
+            final_resp.imag = amp * np.sin(phase)
         else:
             final_resp = resp
 
@@ -577,11 +582,15 @@ class CoefficientsTypeResponseStage(ResponseStage):
         frequencies = frequencies / sr * np.pi * 2.0
 
         # Check if interpolation is required so save time for long traces.
-        if n_frequencies_limit_for_interp is not None:
+        interpolate = False
+        if n_frequencies_limit_for_interp is None:
             if len(frequencies) > n_frequencies_limit_for_interp:
-                resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
-                                               n_frequencies_limit_for_interp,
-                                               dtype=np.float64)
+                interpolate = True
+                
+        if interpolate:
+            resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
+                                            n_frequencies_limit_for_interp,
+                                            dtype=np.float64)
         else:
             resp_frequencies = frequencies
 
@@ -656,13 +665,12 @@ class CoefficientsTypeResponseStage(ResponseStage):
         # If an interpolation limit (n_frequencies_limit_for_interp) is set,
         # then interpolate the amplitude and phase onto the originally
         # requested frequencies.
-        if n_frequencies_limit_for_interp is not None:
-            if len(frequencies) > n_frequencies_limit_for_interp:
-                amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                        resp_frequencies, amp, k=3)(frequencies)
-                phase = scipy.interpolate.InterpolatedUnivariateSpline(
-                        resp_frequencies, phase, k=3)(frequencies)
-                final_resp = np.zeros_like(frequencies) + 0j
+        if interpolate:
+            amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, amp, k=3)(frequencies)
+            phase = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, phase, k=3)(frequencies)
+            final_resp = np.zeros_like(frequencies) + 0j
         else:
             final_resp = np.empty_like(resp)
         final_resp.real = amp * np.cos(phase)
@@ -859,17 +867,21 @@ class FIRResponseStage(ResponseStage):
         frequencies = frequencies / sr * np.pi * 2.0
         # Compute response for a limited number of frequencies and interpolate
         # inbetween - 10000 appears fine for high precision and speed.
+        interpolate = False
         if n_frequencies_limit_for_interp is not None:
             if len(frequencies) > n_frequencies_limit_for_interp:
-                resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
-                                               n_frequencies_limit_for_interp,
-                                               dtype=np.float64)
-                resp = scipy.signal.freqz(b=coefficients, a=[1.],
-                                          worN=resp_frequencies)[1]
-                amp = np.abs(resp) * self.stage_gain + 0j
-                amp = amp.real
-                amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                        resp_frequencies, amp, k=3)(frequencies)
+                interpolate = True
+                
+        if interpolate:
+            resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
+                                            n_frequencies_limit_for_interp,
+                                            dtype=np.float64)
+            resp = scipy.signal.freqz(b=coefficients, a=[1.],
+                                        worN=resp_frequencies)[1]
+            amp = np.abs(resp) * self.stage_gain + 0j
+            amp = amp.real
+            amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, amp, k=3)(frequencies)
         else:
             resp = scipy.signal.freqz(b=coefficients, a=[1.],
                                       worN=frequencies)[1]
