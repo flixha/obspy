@@ -2678,8 +2678,10 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
 
     @_add_processing_info
     def remove_response(self, inventory=None, output="VEL", water_level=60,
-                        pre_filt=None, zero_mean=True, fast=True, taper=True,
-                        taper_fraction=0.05, plot=False, fig=None, **kwargs):
+                        pre_filt=None, zero_mean=True, taper=True,
+                        taper_fraction=0.05,
+                        n_frequencies_limit_for_interp=10000,
+                        plot=False, fig=None, **kwargs):
         """
         Deconvolve instrument response.
 
@@ -2804,15 +2806,18 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
         :type zero_mean: bool
         :param zero_mean: If `True`, the mean of the waveform data is
             subtracted in time domain prior to deconvolution.
-        :type fast: bool
-        :param fast: When set to True (default), then the calculation of the
-            response for a large number of frequencies is sped up through
-            interpolation. Relevant for traces with >10000 samples.
         :type taper: bool
         :param taper: If `True`, a cosine taper is applied to the waveform data
             in time domain prior to deconvolution.
         :type taper_fraction: float
         :param taper_fraction: Taper fraction of cosine taper to use.
+        :type n_frequencies_limit_for_interp: int
+        :param n_frequencies_limit_for_interp: Indicates a limit for the number
+            of frequencies (=number of samples in a trace) for which the
+            response curve is calculated. Above this number of frequencies, the
+            response curve is interpolated. Speeds up response-calculation for
+            traces with many samples, e.g., >10000. Set to None to avoid all
+            interpolation.
         :type plot: bool or str
         :param plot: If `True`, brings up a plot that illustrates how the
             data are processed in the frequency domain in three steps. First by
@@ -2935,9 +2940,10 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
         # calculate and apply frequency response,
         # optionally prefilter in frequency domain and/or apply water level
         freq_response, freqs = \
-            response.get_response_for_window_size(self.stats.delta, nfft,
-                                                  output=output, fast=fast,
-                                                  **kwargs)
+            response.get_response_for_window_size(
+                self.stats.delta, nfft, output=output,
+                n_frequencies_limit_for_interp=n_frequencies_limit_for_interp,
+                **kwargs)
 
         if plot:
             ax1.loglog(freqs, np.abs(data), color=color1, zorder=9)
