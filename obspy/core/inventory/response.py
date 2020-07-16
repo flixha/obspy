@@ -345,11 +345,11 @@ class PolesZerosResponseStage(ResponseStage):
         Produce the response curve from this stage's data for a given
         range of frequencies
         :param frequencies: Frequency range to get resp curve over
-        :param n_frequencies_limit_for_interp: Indicates a limit for the number
-            of frequencies (=number of samples in a trace) for which the
-            response curve is calculated. Above this number of frequencies, the
-            response curve is interpolated. Speeds up response-calculation for
-            traces with many samples, e.g., >10000.
+        :param n_frequencies_limit_for_interp:
+            Indicates a limit for the number of frequencies (=number of samples
+            in a trace) for which the response curve is calculated. Above this
+            number of frequencies, the response curve is interpolated. Speeds
+            up response-calculation for traces with many samples, e.g., >10000.
         :return: The curve describing this response stage
         """
         # Has to be imported here for now to avoid circular imports.
@@ -565,11 +565,11 @@ class CoefficientsTypeResponseStage(ResponseStage):
         Produce the response curve from this coefficient
         response stage for a range of frequencies
         :param frequencies: Frequency range to get resp curve over
-        :param n_frequencies_limit_for_interp: Indicates a limit for the number
-            of frequencies (=number of samples in a trace) for which the
-            response curve is calculated. Above this number of frequencies, the
-            response curve is interpolated. Speeds up response-calculation for
-            traces with many samples, e.g., >10000.
+        :param n_frequencies_limit_for_interp:
+            Indicates a limit for the number of frequencies (=number of samples
+            in a trace) for which the response curve is calculated. Above this
+            number of frequencies, the response curve is interpolated. Speeds
+            up response-calculation for traces with many samples, e.g., >10000.
         :return: The curve describing this response stage
         """
         # Decimation blockette, e.g. gain only!
@@ -844,11 +844,11 @@ class FIRResponseStage(ResponseStage):
         """
         Given Computes the
         :param frequencies: Discrete frequencies to calculate response for.
-        :param n_frequencies_limit_for_interp: Indicates a limit for the number
-            of frequencies (=number of samples in a trace) for which the
-            response curve is calculated. Above this number of frequencies, the
-            response curve is interpolated. Speeds up response-calculation for
-            traces with many samples, e.g., >10000.
+        :param n_frequencies_limit_for_interp:
+            Indicates a limit for the number of frequencies (=number of samples
+            in a trace) for which the response curve is calculated. Above this
+            number of frequencies, the response curve is interpolated. Speeds
+            up response-calculation for traces with many samples, e.g., >10000.
         """
         # Decimation blockette, e.g. gain only!
         if not len(self._coefficients):
@@ -1125,6 +1125,12 @@ class Response(ComparingObject):
         :type end_stage: int, optional
         :param end_stage: Stage sequence number of last stage that will be
             used (disregarding all later stages).
+        :type n_frequencies_limit_for_interp: int
+        :param n_frequencies_limit_for_interp:
+            Indicates a limit for the number of frequencies (=number of samples
+            in a trace) for which the response curve is calculated. Above this
+            number of frequencies, the response curve is interpolated. Speeds
+            up response-calculation for traces with many samples, e.g., >10000.
         :rtype: tuple of two arrays
         :returns: frequency response and corresponding frequencies
         """
@@ -1163,11 +1169,11 @@ class Response(ComparingObject):
         :param end_stage: Stage sequence number of last stage that will be
             used (disregarding all later stages).
         :type n_frequencies_limit_for_interp: int
-        :param n_frequencies_limit_for_interp: Indicates a limit for the number
-            of frequencies (=number of samples in a trace) for which the
-            response curve is calculated. Above this number of frequencies, the
-            response curve is interpolated. Speeds up response-calculation for
-            traces with many samples, e.g., >10000.
+        :param n_frequencies_limit_for_interp:
+            Indicates a limit for the number of frequencies (=number of samples
+            in a trace) for which the response curve is calculated. Above this
+            number of frequencies, the response curve is interpolated. Speeds
+            up response-calculation for traces with many samples, e.g., >10000.
         :rtype: :class:`numpy.ndarray`
         :returns: frequency response at requested frequencies
         """
