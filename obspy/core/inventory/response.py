@@ -853,7 +853,7 @@ class FIRResponseStage(ResponseStage):
         # Here we zero the phase (FIR) and return the amplitude
         amp = np.abs(resp) * self.stage_gain + 0j
         amp = amp.real
-        
+
         if interpolate:
             amp = scipy.interpolate.InterpolatedUnivariateSpline(
                 resp_frequencies, amp, k=3)(frequencies)
@@ -2783,7 +2783,7 @@ def _check_response_interpolation(frequencies, n_frequencies_limit_for_interp):
     :returns: Tuple of (interpolate, resp_frequencies) that indicates whether
         interpolation should be used, and the frequencies for which responses
         shall be requested (if interpolate=False, then the frequencies that are
-        input are the same that are output).        
+        input are the same that are output).
     """
     interpolate = False
     if n_frequencies_limit_for_interp is None:
@@ -2796,7 +2796,7 @@ def _check_response_interpolation(frequencies, n_frequencies_limit_for_interp):
                                         dtype=np.float64)
     else:
         resp_frequencies = frequencies
-    
+
     return interpolate, resp_frequencies
 
 
