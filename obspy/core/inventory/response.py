@@ -366,11 +366,11 @@ class PolesZerosResponseStage(ResponseStage):
         # If required, do interpolation of amplitude and phase of the response
         if interpolate:
             amp = np.abs(resp)
-            phase = np.radians(np.unwrap(np.angle(resp, deg=False))) / np.pi
-            amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                resp_frequencies, amp, k=3)(frequencies)
-            phase = scipy.interpolate.InterpolatedUnivariateSpline(
-                resp_frequencies, phase, k=3)(frequencies)
+            # phase = np.radians(np.unwrap(np.angle(resp, deg=False))) / np.pi
+            #phase = np.unwrap(np.angle(resp, deg=False))
+            phase = np.angle(resp)
+            amp = _interpolate(resp_frequencies, amp, frequencies)
+            phase = _interpolate(resp_frequencies, phase, frequencies)
             final_resp = np.zeros_like(frequencies) + 0j
             final_resp.real = amp * np.cos(phase)
             final_resp.imag = amp * np.sin(phase)
@@ -567,13 +567,10 @@ class CoefficientsTypeResponseStage(ResponseStage):
 
         sr = self.decimation_input_sample_rate
         frequencies = frequencies / sr * np.pi * 2.0
-        
+
         # Check if interpolation is required so save time for long traces.
-        if len(frequencies) > 10000 and fast:
-            resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
-                                           10000, dtype=np.float64)
-        else:
-            resp_frequencies = frequencies
+        interpolate, resp_frequencies = _check_response_interpolation(
+            frequencies, n_frequencies_limit_for_interp, 'log')
 
         # Check if interpolation is required so save time for long traces.
         interpolate, resp_frequencies = _check_response_interpolation(
@@ -611,6 +608,10 @@ class CoefficientsTypeResponseStage(ResponseStage):
                     resp += den * (np.cos(-idx * w) + np.sin(-idx * w) * 1j)
                 amp /= abs(resp)
                 phase -= np.arctan2(resp.imag, resp.real)
+
+                if interpolate:
+                    amp = _interpolate(w, amp, frequencies)
+                    phase = _interpolate(w, phase, frequencies)
 
                 return amp * np.cos(phase) + amp * np.sin(phase) * 1j
         elif self.cf_transfer_function_type == "ANALOG (RADIANS/SECOND)":
@@ -651,10 +652,8 @@ class CoefficientsTypeResponseStage(ResponseStage):
         # then interpolate the amplitude and phase onto the originally
         # requested frequencies.
         if interpolate:
-            amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                    resp_frequencies, amp, k=3)(frequencies)
-            phase = scipy.interpolate.InterpolatedUnivariateSpline(
-                    resp_frequencies, phase, k=3)(frequencies)
+            amp = _interpolate(resp_frequencies, amp, frequencies)
+            phase = _interpolate(resp_frequencies, phase, frequencies)
             final_resp = np.zeros_like(frequencies) + 0j
         else:
             final_resp = np.empty_like(resp)
@@ -862,8 +861,7 @@ class FIRResponseStage(ResponseStage):
         amp = amp.real
 
         if interpolate:
-            amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                resp_frequencies, amp, k=3)(frequencies)
+            amp = _interpolate(resp_frequencies, amp, frequencies)
 
         return amp
 
@@ -1838,10 +1836,8 @@ class Response(ComparingObject):
                     raise ValueError(msg % (min_f_avail, max_f_avail, min_f,
                                             max_f))
 
-                amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                    f, amp, k=3)(frequencies)
-                phase = scipy.interpolate.InterpolatedUnivariateSpline(
-                    f, phase, k=3)(frequencies)
+                amp = _interpolate(f, amp, frequencies)
+                phase = _interpolate(f, phase, frequencies)
 
                 # Set static offset to zero.
                 amp[amp == 0] = 0
@@ -2763,6 +2759,62 @@ def _check_response_interpolation(frequencies, n_frequencies_limit_for_interp):
         resp_frequencies = frequencies
 
     return interpolate, resp_frequencies
+
+
+def _check_response_interpolation(frequencies, n_frequencies_limit_for_interp):
+    """
+    Helper function to check whether the calculation of the response for a set
+    of frequencies shall use interpolation or not.
+
+    :type n_frequencies_limit_for_interp: int
+    :param n_frequencies_limit_for_interp:
+        Indicates a limit for the number of frequencies (=number of samples
+        in a trace) for which the response curve is calculated. Above this
+        number of frequencies, the response curve is interpolated. Speeds
+        up response-calculation for traces with many samples, e.g., >10000.
+    :rtype: tuple of (bool, np.array)
+    :returns: Tuple of (interpolate, resp_frequencies) that indicates whether
+        interpolation should be used, and the frequencies for which responses
+        shall be requested (if interpolate=False, then the frequencies that are
+        input are the same that are output).
+    """
+    interpolate = False
+    if n_frequencies_limit_for_interp is not None:
+        if len(frequencies) > n_frequencies_limit_for_interp:
+            interpolate = True
+
+    if interpolate:
+        # If the first frequency is zero, then we need to add the zero after
+        # the logspace has been created.
+        if frequencies[0] == 0:
+            resp_frequencies = np.logspace(np.log10(frequencies[1]),
+                                        np.log10(frequencies[-1]),
+                                        n_frequencies_limit_for_interp-1,
+                                        dtype=np.float64)
+            resp_frequencies = np.concatenate((np.zeros(1), resp_frequencies))
+        else:
+            resp_frequencies = np.logspace(np.log10(frequencies[1]),
+                                        np.log10(frequencies[-1]),
+                                        n_frequencies_limit_for_interp,
+                                        dtype=np.float64)
+    else:
+        resp_frequencies = frequencies
+
+    return interpolate, resp_frequencies
+
+
+def _interpolate(resp_frequencies, y, frequencies):
+    """
+    Helper-function for the cubic interpolation of phase or amplitude from the
+    reduced set of frequencies to the full set of frequencies.
+    :param resp_frequencies: reduced set of frequencies
+    :param frequencies: full set of frequencies
+    :rtype: numpy.array
+    :returns: interpolated values of x
+    """
+    y_interp = scipy.interpolate.InterpolatedUnivariateSpline(
+        resp_frequencies, y, k=3)(frequencies)
+    return y_interp
 
 
 if __name__ == '__main__':
