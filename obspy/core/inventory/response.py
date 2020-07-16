@@ -569,6 +569,13 @@ class CoefficientsTypeResponseStage(ResponseStage):
         frequencies = frequencies / sr * np.pi * 2.0
 
         # Check if interpolation is required so save time for long traces.
+        if len(frequencies) > 10000 and fast:
+            resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
+                                           10000, dtype=np.float64)
+        else:
+            resp_frequencies = frequencies
+
+        # Check if interpolation is required so save time for long traces.
         interpolate, resp_frequencies = _check_response_interpolation(
             frequencies, n_frequencies_limit_for_interp)
 
