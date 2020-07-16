@@ -176,11 +176,9 @@ class ResponseStage(ComparingObject):
     def _repr_pretty_(self, p, cycle):
         p.text(str(self))
 
-    def get_response(self, frequencies, n_frequencies_limit_for_interp=None):
+    def get_response(self, frequencies, **kwargs):
         """
         :param frequencies: Frequency range to get resp curve over
-        :param n_frequencies_limit_for_interp: Dummy argument to make function
-            similar to get_response-functions for other stage-types.
         :return: The curve describing this response stage
         """
         # if a response stage isn't a subclass then it's likely a gain stage.
@@ -355,18 +353,8 @@ class PolesZerosResponseStage(ResponseStage):
         # Has to be imported here for now to avoid circular imports.
         from obspy.signal.invsim import paz_to_freq_resp
 
-        interpolate = False
-        if n_frequencies_limit_for_interp is None:
-            if len(frequencies) > n_frequencies_limit_for_interp:
-                interpolate = True
-
-        if interpolate:
-            resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
-                                            n_frequencies_limit_for_interp,
-                                            dtype=np.float64)
-        else:
-            resp_frequencies = frequencies
-
+        interpolate, resp_frequencies = _check_response_interpolation(
+            frequencies, n_frequencies_limit_for_interp)
 
         resp = paz_to_freq_resp(
             poles=np.array(self._poles, dtype=np.complex128),
@@ -580,17 +568,8 @@ class CoefficientsTypeResponseStage(ResponseStage):
         frequencies = frequencies / sr * np.pi * 2.0
 
         # Check if interpolation is required so save time for long traces.
-        interpolate = False
-        if n_frequencies_limit_for_interp is None:
-            if len(frequencies) > n_frequencies_limit_for_interp:
-                interpolate = True
-
-        if interpolate:
-            resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
-                                            n_frequencies_limit_for_interp,
-                                            dtype=np.float64)
-        else:
-            resp_frequencies = frequencies
+        interpolate, resp_frequencies = _check_response_interpolation(
+            frequencies, n_frequencies_limit_for_interp)
 
         # While most cases we expect this to represent a Bkt. 54 and
         # thus not have a denominator, if the transfer function is
@@ -865,27 +844,19 @@ class FIRResponseStage(ResponseStage):
         frequencies = frequencies / sr * np.pi * 2.0
         # Compute response for a limited number of frequencies and interpolate
         # inbetween - 10000 appears fine for high precision and speed.
-        interpolate = False
-        if n_frequencies_limit_for_interp is not None:
-            if len(frequencies) > n_frequencies_limit_for_interp:
-                interpolate = True
+        interpolate, resp_frequencies = _check_response_interpolation(
+            frequencies, n_frequencies_limit_for_interp)
 
+        resp = scipy.signal.freqz(b=coefficients, a=[1.],
+                                  worN=resp_frequencies)[1]
+        # Here we zero the phase (FIR) and return the amplitude
+        amp = np.abs(resp) * self.stage_gain + 0j
+        amp = amp.real
+        
         if interpolate:
-            resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
-                                            n_frequencies_limit_for_interp,
-                                            dtype=np.float64)
-            resp = scipy.signal.freqz(b=coefficients, a=[1.],
-                                      worN=resp_frequencies)[1]
-            amp = np.abs(resp) * self.stage_gain + 0j
-            amp = amp.real
             amp = scipy.interpolate.InterpolatedUnivariateSpline(
-                    resp_frequencies, amp, k=3)(frequencies)
-        else:
-            resp = scipy.signal.freqz(b=coefficients, a=[1.],
-                                      worN=frequencies)[1]
-            # Here we zero the phase (FIR) and return the amplitude
-            amp = np.abs(resp) * self.stage_gain + 0j
-            amp = amp.real
+                resp_frequencies, amp, k=3)(frequencies)
+
         return amp
 
 
@@ -2795,6 +2766,37 @@ def _pitick2latex(x):
             x = ""
         string += r"\frac{%s\pi}{2}$" % x
     return string
+
+def _check_response_interpolation(frequencies, n_frequencies_limit_for_interp):
+    """
+    Helper function to check whether the calculation of the response for a set
+    of frequencies shall use interpolation or not.
+
+    :type n_frequencies_limit_for_interp: int
+    :param n_frequencies_limit_for_interp:
+        Indicates a limit for the number of frequencies (=number of samples
+        in a trace) for which the response curve is calculated. Above this
+        number of frequencies, the response curve is interpolated. Speeds
+        up response-calculation for traces with many samples, e.g., >10000.
+    :rtype: tuple of (bool, np.array)
+    :returns: Tuple of (interpolate, resp_frequencies) that indicates whether
+        interpolation should be used, and the frequencies for which responses
+        shall be requested (if interpolate=False, then the frequencies that are
+        input are the same that are output).        
+    """
+    interpolate = False
+    if n_frequencies_limit_for_interp is None:
+        if len(frequencies) > n_frequencies_limit_for_interp:
+            interpolate = True
+
+    if interpolate:
+        resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
+                                        n_frequencies_limit_for_interp,
+                                        dtype=np.float64)
+    else:
+        resp_frequencies = frequencies
+    
+    return interpolate, resp_frequencies
 
 
 if __name__ == '__main__':
