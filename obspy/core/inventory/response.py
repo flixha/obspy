@@ -350,25 +350,23 @@ class PolesZerosResponseStage(ResponseStage):
             response curve is calculated. Above this number of frequencies, the
             response curve is interpolated. Speeds up response-calculation for
             traces with many samples, e.g., >10000.
-        Indicates whether to speed up calculation through
-            interpolation.
         :return: The curve describing this response stage
         """
         # Has to be imported here for now to avoid circular imports.
         from obspy.signal.invsim import paz_to_freq_resp
-        
+
         interpolate = False
         if n_frequencies_limit_for_interp is None:
             if len(frequencies) > n_frequencies_limit_for_interp:
                 interpolate = True
-                
+
         if interpolate:
             resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
                                             n_frequencies_limit_for_interp,
                                             dtype=np.float64)
         else:
             resp_frequencies = frequencies
-            
+
 
         resp = paz_to_freq_resp(
             poles=np.array(self._poles, dtype=np.complex128),
@@ -586,7 +584,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
         if n_frequencies_limit_for_interp is None:
             if len(frequencies) > n_frequencies_limit_for_interp:
                 interpolate = True
-                
+
         if interpolate:
             resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
                                             n_frequencies_limit_for_interp,
@@ -871,13 +869,13 @@ class FIRResponseStage(ResponseStage):
         if n_frequencies_limit_for_interp is not None:
             if len(frequencies) > n_frequencies_limit_for_interp:
                 interpolate = True
-                
+
         if interpolate:
             resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
                                             n_frequencies_limit_for_interp,
                                             dtype=np.float64)
             resp = scipy.signal.freqz(b=coefficients, a=[1.],
-                                        worN=resp_frequencies)[1]
+                                      worN=resp_frequencies)[1]
             amp = np.abs(resp) * self.stage_gain + 0j
             amp = amp.real
             amp = scipy.interpolate.InterpolatedUnivariateSpline(
