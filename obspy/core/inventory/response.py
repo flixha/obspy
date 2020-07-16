@@ -355,7 +355,7 @@ class PolesZerosResponseStage(ResponseStage):
         from obspy.signal.invsim import paz_to_freq_resp
 
         interpolate, resp_frequencies = _check_response_interpolation(
-            frequencies, n_frequencies_limit_for_interp)
+            frequencies, n_frequencies_limit_for_interp, space='log')
 
         resp = paz_to_freq_resp(
             poles=np.array(self._poles, dtype=np.complex128),
@@ -366,7 +366,9 @@ class PolesZerosResponseStage(ResponseStage):
         # If required, do interpolation of amplitude and phase of the response
         if interpolate:
             amp = np.abs(resp)
-            phase = np.radians(np.unwrap(np.angle(resp, deg=False))) / np.pi
+            # phase = np.radians(np.unwrap(np.angle(resp, deg=False))) / np.pi
+            #phase = np.unwrap(np.angle(resp, deg=False))
+            phase = np.angle(resp)
             amp = _interpolate(resp_frequencies, amp, frequencies)
             phase = _interpolate(resp_frequencies, phase, frequencies)
             final_resp = np.zeros_like(frequencies) + 0j
@@ -568,7 +570,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
 
         # Check if interpolation is required so save time for long traces.
         interpolate, resp_frequencies = _check_response_interpolation(
-            frequencies, n_frequencies_limit_for_interp)
+            frequencies, n_frequencies_limit_for_interp, 'log')
 
         # While most cases we expect this to represent a Bkt. 54 and
         # thus not have a denominator, if the transfer function is
@@ -602,6 +604,10 @@ class CoefficientsTypeResponseStage(ResponseStage):
                     resp += den * (np.cos(-idx * w) + np.sin(-idx * w) * 1j)
                 amp /= abs(resp)
                 phase -= np.arctan2(resp.imag, resp.real)
+
+                if interpolate:
+                    amp = _interpolate(w, amp, frequencies)
+                    phase = _interpolate(w, phase, frequencies)
 
                 return amp * np.cos(phase) + amp * np.sin(phase) * 1j
         elif self.cf_transfer_function_type == "ANALOG (RADIANS/SECOND)":
@@ -826,6 +832,8 @@ class FIRResponseStage(ResponseStage):
             number of frequencies, the response curve is interpolated. Speeds
             up response-calculation for traces with many samples, e.g., >10000.
         """
+        # seems ok with linear spaced values
+
         # Decimation blockette, e.g. gain only!
         if not len(self._coefficients):
             return np.ones_like(frequencies) * self.stage_gain
@@ -842,7 +850,7 @@ class FIRResponseStage(ResponseStage):
         # Compute response for a limited number of frequencies and interpolate
         # inbetween - 10000 appears fine for high precision and speed.
         interpolate, resp_frequencies = _check_response_interpolation(
-            frequencies, n_frequencies_limit_for_interp)
+            frequencies, n_frequencies_limit_for_interp, 'lin')
 
         resp = scipy.signal.freqz(b=coefficients, a=[1.],
                                   worN=resp_frequencies)[1]
@@ -2762,7 +2770,8 @@ def _pitick2latex(x):
     return string
 
 
-def _check_response_interpolation(frequencies, n_frequencies_limit_for_interp):
+def _check_response_interpolation(frequencies, n_frequencies_limit_for_interp,
+                                  space='lin'):
     """
     Helper function to check whether the calculation of the response for a set
     of frequencies shall use interpolation or not.
@@ -2785,9 +2794,24 @@ def _check_response_interpolation(frequencies, n_frequencies_limit_for_interp):
             interpolate = True
 
     if interpolate:
-        resp_frequencies = np.logspace(frequencies[0], frequencies[-1],
-                                        n_frequencies_limit_for_interp,
-                                        dtype=np.float64)
+        if space.lower() == 'lin':
+            resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
+                                           n_frequencies_limit_for_interp,
+                                           dtype=np.float64)
+        elif space.lower() == 'log':
+            # If the first frequency is zero, then we need to add the zero after
+            # the logspace has been created.
+            if frequencies[0] == 0:
+                resp_frequencies = np.logspace(np.log10(frequencies[1]),
+                                            np.log10(frequencies[-1]),
+                                            n_frequencies_limit_for_interp-1,
+                                            dtype=np.float64)
+                resp_frequencies = np.concatenate((np.zeros(1), resp_frequencies))
+            else:
+                resp_frequencies = np.logspace(np.log10(frequencies[1]),
+                                            np.log10(frequencies[-1]),
+                                            n_frequencies_limit_for_interp,
+                                            dtype=np.float64)
     else:
         resp_frequencies = frequencies
 
