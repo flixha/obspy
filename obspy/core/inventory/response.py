@@ -570,7 +570,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
 
         # Check if interpolation is required so save time for long traces.
         interpolate, resp_frequencies = _check_response_interpolation(
-            frequencies, n_frequencies_limit_for_interp, 'log')
+            frequencies, n_frequencies_limit_for_interp)
 
         # Check if interpolation is required so save time for long traces.
         interpolate, resp_frequencies = _check_response_interpolation(
