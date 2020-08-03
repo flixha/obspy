@@ -569,7 +569,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
 
         # Check if interpolation is required so save time for long traces.
         interpolate, resp_frequencies = _check_response_interpolation(
-            frequencies, n_frequencies_limit_for_interp, 'log')
+            frequencies, n_frequencies_limit_for_interp)
 
         # While most cases we expect this to represent a Bkt. 54 and
         # thus not have a denominator, if the transfer function is
