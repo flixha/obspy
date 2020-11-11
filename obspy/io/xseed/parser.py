@@ -44,6 +44,8 @@ from .blockette import (Blockette053, Blockette054, Blockette057, Blockette058,
 from .utils import (IGNORE_ATTR, SEEDParserException, to_tag)
 from .fields import Loop, VariableString
 
+from obspy.core.inventory import CoefficientWithUncertainties
+
 
 CONTINUE_FROM_LAST_RECORD = b'*'
 HEADERS = ['V', 'A', 'S']
@@ -1532,6 +1534,11 @@ class Parser(object):
                         if not hasattr(_t, "__iter__"):
                             _t = [_t]
                         denominator.extend(_t)
+
+                denominator = [CoefficientWithUncertainties(n)
+                               for n in denominator]
+                numerator = [CoefficientWithUncertainties(n)
+                             for n in numerator]
 
                 try:
                     i_u = self.resolve_abbreviation(
