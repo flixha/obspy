@@ -27,6 +27,8 @@ import warnings
 import numpy as np
 import scipy.signal
 
+from pyfftw.interfaces.scipy_fftpack import rfft, irfft
+
 from obspy.core.util.attribdict import AttribDict
 from obspy.core.util.base import NamedTemporaryFile
 from obspy.core.inventory.response import Response
@@ -602,7 +604,7 @@ def simulate_seismometer(
     else:
         nfft = _npts2nfft(ndat)
     # Transform data in Fourier domain
-    data = np.fft.rfft(data, n=nfft)
+    data = rfft(data, n=nfft)
     # Inverse filtering = Instrument correction
     if paz_remove:
         freq_response, freqs = paz_to_freq_resp(
@@ -641,7 +643,7 @@ def simulate_seismometer(
 
     data[-1] = abs(data[-1]) + 0.0j
     # transform data back into the time domain
-    data = np.fft.irfft(data)[0:ndat]
+    data = irfft(data)[0:ndat]
     if pitsasim:
         # linear detrend
         data = simple_detrend(data)
