@@ -1699,7 +1699,8 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
         array([ 0.5       ,  0.40432914,  0.3232233 ,  0.26903012,  0.25 ...
         """
         from scipy.signal import get_window
-        from scipy.fftpack import rfft, irfft
+        # from scipy.fftpack import rfft, irfft
+        from pyfftw.interfaces.scipy_fftpack import rfft, irfft
         factor = self.stats.sampling_rate / float(sampling_rate)
         # check if end time changes and this is not explicitly allowed
         if strict_length:
@@ -2802,6 +2803,7 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
         if NUMPY_VERSION < [1, 17]:
             limit_numpy_fft_cache()
 
+        from pyfftw.interfaces import scipy_fft
         from obspy.core.inventory import PolynomialResponseStage
         from obspy.signal.invsim import (cosine_taper, cosine_sac_taper,
                                          invert_spectrum)
@@ -2906,7 +2908,7 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
         from obspy.signal.util import _npts2nfft
         nfft = _npts2nfft(npts)
         # Transform data to Frequency domain
-        data = np.fft.rfft(data, n=nfft)
+        data = scipy_fft.rfft(data, n=nfft)
         # calculate and apply frequency response,
         # optionally prefilter in frequency domain and/or apply water level
         freq_response, freqs = \
@@ -2952,7 +2954,7 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
             ax3b.loglog(freqs, np.abs(freq_response), color=color2, zorder=10)
 
         # transform data back into the time domain
-        data = np.fft.irfft(data)[0:npts]
+        data = scipy_fft.irfft(data)[0:npts]
 
         if plot:
             # Oftentimes raises NumPy warnings which we don't want to see.
