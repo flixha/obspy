@@ -27,7 +27,8 @@ import warnings
 import numpy as np
 import scipy.signal
 
-from pyfftw.interfaces.scipy_fftpack import rfft, irfft
+# from pyfftw.interfaces.scipy_fftpack import rfft, irfft
+from numpy.fft import rfft, irfft
 
 from obspy.core.util.attribdict import AttribDict
 from obspy.core.util.base import NamedTemporaryFile
