@@ -25,6 +25,7 @@ import warnings
 import datetime
 import os
 import io
+import re
 from math import sqrt
 
 from obspy import UTCDateTime, read
@@ -33,7 +34,7 @@ from obspy.core.event import (
     Event, Origin, Magnitude, StationMagnitude, Catalog, EventDescription,
     CreationInfo, OriginQuality, OriginUncertainty, Pick, WaveformStreamID,
     Arrival, Amplitude, FocalMechanism, MomentTensor, NodalPlane, NodalPlanes,
-    QuantityError, Tensor, ResourceIdentifier)
+    QuantityError, Tensor, ResourceIdentifier, Comment)
 from obspy.io.nordic import NordicParsingError
 from obspy.io.nordic.utils import (
     _int_conv, _str_conv, _float_conv, _evmagtonor, _nortoevmag,
@@ -436,6 +437,7 @@ def _extract_event(event_str, catalog, wav_names, return_wavnames=False):
     new_event = _read_highaccuracy(tagged_lines, new_event)
     new_event = _read_focal_mechanisms(tagged_lines, new_event)
     new_event = _read_moment_tensors(tagged_lines, new_event)
+    new_event = _read_comments(tagged_lines, new_event)
     if return_wavnames:
         wav_names.append(_readwavename(tagged_lines=tagged_lines['6']))
     new_event = _read_picks(tagged_lines=tagged_lines, new_event=new_event)
@@ -639,6 +641,35 @@ def _read_moment_tensors(tagged_lines, event):
                 method_id=ResourceIdentifier(
                     "smi:nc.anss.org/momentTensor/" + mt_line_1[70:77].strip()
                 ))))
+    return event
+
+
+def _read_comments(tagged_lines, event):
+    """
+    Read comment lines from s-file
+
+    :param tagged_lines: Lines keyed by line type
+    :type tagged_lines: dict
+    :returns: updated event
+    :rtype: :class:`~obspy.core.event.event.Event`
+    """
+    if '3' not in tagged_lines.keys():
+        return event
+    # Get comment lines
+    com_lines = tagged_lines['3']
+    # can contain SPEC which is read in as spectral information -
+    # should such lines not be read as comments?
+    for seisan_comment, line in com_lines:
+        # Remove end-of-line characters and empty text
+        save_comment = re.sub('3\\n$', '', seisan_comment).strip()
+        event.comments.append(Comment(text=save_comment))
+
+    # Add waveform-file names as comment to event
+    wav_lines = tagged_lines['6']
+    for wav_line, line in wav_lines:
+        save_comment = 'Waveform-filename: ' + re.sub(
+            '6\\n', '', wav_line).strip()
+        event.comments.append(Comment(text=save_comment))
     return event
 
 
@@ -1202,7 +1233,7 @@ def write_select(catalog, filename, userid='OBSP', evtype='L',
         raise ValueError('Nordic format can be ''OLD'' or ''NEW'', not '
                          + version)
     if not wavefiles:
-        wavefiles = ['DUMMY' for _i in range(len(catalog))]
+        wavefiles = ['' for _i in range(len(catalog))]
     with open(filename, 'w') as fout:
         for event, wavfile in zip(catalog, wavefiles):
             select = io.StringIO()
@@ -1216,7 +1247,7 @@ def write_select(catalog, filename, userid='OBSP', evtype='L',
 
 
 def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
-                  wavefiles='DUMMY', explosion=False, version='OLD',
+                  wavefiles=None, explosion=False, version='OLD',
                   overwrite=True, string_io=None, high_accuracy=True):
     """
     Write an :class:`~obspy.core.event.Event` to a nordic formatted s-file.
@@ -1446,8 +1477,16 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
             userid.ljust(4)[0:4], evtime.strftime("%Y%m%d%H%M%S")))
     # Write line-type 6 of s-file
     for wavefile in wavefiles:
+        # Do not write names that indicate there's not a waveform file
+        if wavefile == '' or wavefile == 'None' or wavefile is None:
+            continue
         sfile.write(' ' + os.path.basename(wavefile) +
                     '6'.rjust(79 - len(os.path.basename(wavefile))) + '\n')
+    for comment in event.comments:
+        nordic_comment = _write_comment(comment)
+        if nordic_comment is None:
+            continue
+        sfile.write(nordic_comment + '\n')
     # Write final line of s-file
     if version == 'OLD':
         sfile.write(OLD_PHASE_HEADER_LINE)
@@ -1608,6 +1647,35 @@ def _write_hyp_error_line(origin):
     return ''.join(error_line)
 
 
+def _write_comment(comment):
+    """
+    Write comment to s-file
+
+    :param comment: comment
+    :type comment: `~obspy.core.event.Comment`
+    :returns: List of String
+
+    """
+    comment_line = list(' ' * 79 + '3')
+    if comment.text is None:
+        return None
+    comment_str = comment.text
+    # Check if it's a comment line containing a Seisan-waveform
+    if comment_str.startswith('Waveform-filename: '):
+        comment_str = re.sub('^Waveform-filename: ', '', comment_str)
+        comment_line[-1] = '6'
+
+    n_comment_chars = len(comment_str)
+    if n_comment_chars > 78:
+        UserWarning('Writing of comment-lines to S-file does not currently'
+                    'support lines longer than 78 characters. Will cut line'
+                    'for printing to file.')
+        n_comment_chars = 78
+    comment_line[1:n_comment_chars+1] = comment_str[:n_comment_chars]
+    comment_line = ''.join(comment_line)
+    return comment_line
+
+
 def nordpick(event, high_accuracy=True, version='OLD'):
     """
     Format picks in an :class:`~obspy.core.event.event.Event` to nordic.
@@ -1746,7 +1814,7 @@ def nordpick(event, high_accuracy=True, version='OLD'):
                     phase_hint = 'IAML'
                     impulsivity = ' '
             else:
-                coda = int(amplitude.generic_amplitude)
+                coda = str(int(amplitude.generic_amplitude))
                 peri = ' '
                 peri_round = False
                 amp = None
@@ -1831,6 +1899,8 @@ def nordpick(event, high_accuracy=True, version='OLD'):
             residual = '     '
             if coda.strip() != '':
                 par1 = _str_conv(coda).rjust(7)[0:7]  # coda duration
+                phase_hint = 'END'
+                impulsivity = ''
             elif azimuth.strip() != '':  # back-azimuth
                 par1 = _str_conv(azimuth).rjust(7)[0:7]
                 par2 = '    ' + velocity              # app.velocity (not supp)
