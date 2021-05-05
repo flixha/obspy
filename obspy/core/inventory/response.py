@@ -782,7 +782,7 @@ class FIRResponseStage(ResponseStage):
                  decimation_offset=None, decimation_delay=None,
                  decimation_correction=None):
         self._symmetry = symmetry
-        self._coefficients = coefficients or []
+        self.coefficients = coefficients or []
         super(FIRResponseStage, self).__init__(
             stage_sequence_number=stage_sequence_number,
             input_units=input_units,
@@ -813,6 +813,14 @@ class FIRResponseStage(ResponseStage):
             msg = msg % (value, "', '".join(allowed))
             raise ValueError(msg)
         self._symmetry = value
+
+    # @property
+    # def _coefficients(self):
+    #     return self._coefficients
+
+    # @_coefficients.setter
+    # def _coefficients(self, value):
+    #     self.coefficients =
 
     @property
     def coefficients(self):
