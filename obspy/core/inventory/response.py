@@ -815,14 +815,6 @@ class FIRResponseStage(ResponseStage):
             raise ValueError(msg)
         self._symmetry = value
 
-    # @property
-    # def _coefficients(self):
-    #     return self._coefficients
-
-    # @_coefficients.setter
-    # def _coefficients(self, value):
-    #     self.coefficients =
-
     @property
     def coefficients(self):
         return self._coefficients
