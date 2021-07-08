@@ -1829,6 +1829,10 @@ def _write_comment(comment):
         comment_str = re.sub('^Waveform-filename: ', '', comment_str)
         comment_line[-1] = '6'
 
+    # Check if it's a type-I line comment:
+    if "ACTION" in upper(comment_str) and comment_str[-2:] == ' I':
+        comment_line[-1] = 'I'
+
     n_comment_chars = len(comment_str)
     if n_comment_chars > 78:
         UserWarning('Writing of comment-lines to S-file does not currently'
@@ -2009,6 +2013,10 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
             channel_code = channel_code[0] + ' ' + channel_code[-1]
         network_code = pick.waveform_id.network_code or '  '
         location_code = pick.waveform_id.location_code or '  '
+        # Seisan doesn't accept questions marks, need to replace with space
+        network_code = network_code.replace('?', ' ')
+        location_code = location_code.replace('?', ' ')
+        channel_code = channel_code.replace('?', ' ')
         pick_hour = pick.time.hour
         if pick.time.date > origin_date:
             # pick hours up to 48 are supported
@@ -2108,8 +2116,9 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                 add_amp_line = True
                 # check if the amplitude and pick reference the same pick-type
                 # - then don't write the amplitude-pick AND the amplitude
-                if (pick.phase_hint == amplitude.type or
-                        pick.phase_hint[1:] == amplitude.type):
+                if (pick.phase_hint and (pick.phase_hint == amplitude.type or
+                        pick.phase_hint[1:] == amplitude.type)
+                        and _is_iasp_ampl_phase(pick.phase_hint)):
                     is_amp_pick = True
                 mag_hint = (amplitude.magnitude_hint or amplitude.type)
                 if mag_hint is not None and mag_hint.upper() in ['AML', 'ML']:
