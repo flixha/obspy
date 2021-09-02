@@ -498,9 +498,9 @@ class TestNordicMethods:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', UserWarning)
             event = read_nordic(testing_path)[0]
-        assert len(event.origins) == 1
-        assert len(event.picks) == 53
-        assert len(event.origins[0].arrivals) == 35
+        self.assertEqual(len(event.origins), 1)
+        self.assertEqual(len(event.picks), 51)
+        self.assertEqual(len(event.origins[0].arrivals), 34)
 
     def test_read_latin1(self):
         """
