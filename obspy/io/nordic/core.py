@@ -2145,13 +2145,9 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                 add_amp_line = True
                 # In New Nordic format, multiple amplitudes can now be associ-
                 # ated with one pick (e.g., measured at different periods)
-                amp_phase_hints = []
-                amp_eval_modes = []
-                amp_finalweights = []
-                amp_par1s = []
-                amp_par2s = []
-                amp_residuals = []
-                mag_residuals = []
+                amp_phase_hints, amp_eval_modes, amp_finalweights = [], [], []
+                amp_par1s, amp_par2s = [], []
+                amp_residuals, mag_residuals = [], []
                 for j, amp in enumerate(amp_list):
                     # check if the amplitude and pick reference the same phase
                     # - then the amplitude in the line below the pick.
