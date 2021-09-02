@@ -48,6 +48,7 @@ from pathlib import Path
 import io
 import os
 import re
+import os
 from math import sqrt
 import datetime
 from obspy import UTCDateTime, read
@@ -1529,7 +1530,7 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
             userid.ljust(4)[0:4], evtime.strftime("%Y%m%d%H%M%S")))
     # Write line-type 6 of s-file
     for wavefile in wavefiles:
-        # Do not write names that indicate there's not a waveform file
+        # Do not write names that do not actually link to a waveform file
         if wavefile == '' or wavefile == 'None' or wavefile is None:
             continue
         sfile.write(' ' + os.path.basename(wavefile) +
@@ -1991,46 +1992,52 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
         phase_hint = pick.phase_hint or ' '
         # Extract amplitude: note there can be multiple amplitudes, but they
         # should be associated with different picks.
-        amplitude = [amplitude for amplitude in event.amplitudes
-                     if amplitude.pick_id == pick.resource_id]
-        if len(amplitude) > 0:
-            if len(amplitude) > 1:
+        amplitudes = [amplitude for amplitude in event.amplitudes
+                      if amplitude.pick_id == pick.resource_id]
+        amp_list = []
+        if len(amplitudes) > 0:
+            if len(amplitudes) > 1 and nordic_format == 'OLD':
                 msg = 'Nordic files need one pick for each amplitude, ' + \
                     'using the first amplitude only'
                 warnings.warn(msg)
-            amplitude = amplitude[0]
-            # Determine type of amplitude
-            if amplitude.type != 'END':
-                # Extract period
-                if amplitude.period is not None:
-                    peri = amplitude.period
-                    if peri < 10.0:
-                        peri_round = 2
-                    elif peri >= 10.0:
-                        peri_round = 1
+            # amplitude = amplitude[0]
+            for amplitude in amplitudes:
+                # Determine type of amplitude
+                if amplitude.type != 'END':
+                    # Extract period
+                    if amplitude.period is not None:
+                        peri = amplitude.period
+                        if peri < 10.0:
+                            peri_round = 2
+                        elif peri >= 10.0:
+                            peri_round = 1
+                        else:
+                            peri_round = False
                     else:
+                        peri = ' '
                         peri_round = False
+                    # Extract amplitude and convert units
+                    if amplitude.generic_amplitude is not None:
+                        amp = amplitude.generic_amplitude
+                        if amplitude.unit in ['m', 'm/s', 'm/(s*s)', 'm*s']:
+                            amp *= 1e9
+                        # Otherwise we assume that the amplitude is in counts
+                    else:
+                        amp = None
+                    coda = ' '
+                    mag_hint = (amplitude.magnitude_hint or amplitude.type)
+                    if (mag_hint is not None and
+                            mag_hint.upper() in ['AML', 'ML']):
+                        phase_hint = 'IAML'
+                        impulsivity = ' '
                 else:
+                    coda = str(int(amplitude.generic_amplitude))
                     peri = ' '
                     peri_round = False
-                # Extract amplitude and convert units
-                if amplitude.generic_amplitude is not None:
-                    amp = amplitude.generic_amplitude
-                    if amplitude.unit in ['m', 'm/s', 'm/(s*s)', 'm*s']:
-                        amp *= 1e9
-                    # Otherwise we will assume that the amplitude is in counts
-                else:
                     amp = None
-                coda = ' '
-                mag_hint = (amplitude.magnitude_hint or amplitude.type)
-                if mag_hint is not None and mag_hint.upper() in ['AML', 'ML']:
-                    phase_hint = 'IAML'
-                    impulsivity = ' '
-            else:
-                coda = str(int(amplitude.generic_amplitude))
-                peri = ' '
-                peri_round = False
-                amp = None
+                if nordic_format == 'OLD':  # only use 1st amplitude
+                    break
+                amp_list.append(amp)
         else:
             peri = ' '
             peri_round = False
@@ -2150,41 +2157,54 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
             # Amplitude
             elif amp is not None:
                 add_amp_line = True
-                # check if the amplitude and pick reference the same pick-type
-                # - then don't write the amplitude-pick AND the amplitude
-                if (pick.phase_hint and
-                        (pick.phase_hint == amplitude.type or
-                         pick.phase_hint[1:] == amplitude.type)
-                        and _is_iasp_ampl_phase(pick.phase_hint)):
-                    is_amp_pick = True
-                mag_hint = (amplitude.magnitude_hint or amplitude.type)
-                if mag_hint is not None and mag_hint.upper() in ['AML', 'ML']:
-                    amp_phase_hint = 'IAML'
-                else:
-                    amp_phase_hint = 'A'
-                amp_eval_mode = ' ' or INV_EVALUTATION_MAPPING.get(
-                    amplitude.evaluation_mode, None)
-                amp_finalweight = '  '
-                amp_par1 = _str_conv(amp, rounded=1).rjust(7)[0:7]
-                amp_par2 = _str_conv(peri, rounded=peri_round).rjust(6)[0:6]
-                # Get StationMagnitude that corresponds to the amplitude to
-                # print magnitude residual
-                tr_mag = [
-                    sta_mag for sta_mag in event.station_magnitudes
-                    if (sta_mag.amplitude_id == amplitude.resource_id
-                        and sta_mag.creation_info.agency_id
-                        == pick.creation_info.agency_id
-                        and sta_mag.station_magnitude_type
-                        == amplitude.magnitude_hint)]
-                amp_residual = '     '
-                if len(tr_mag) > 0:
-                    if len(tr_mag) > 1:
-                        msg = 'Nordic files need one trace-amplitude for ' + \
-                            'each trace / station-magnitude only.'
-                        warnings.warn(msg)
-                    mag_residual = tr_mag[0].mag_errors.uncertainty
-                    amp_residual = _str_conv(mag_residual, rounded=2
-                                             ).rjust(5)[0:5]
+                # In New Nordic format, multiple amplitudes can now be associ-
+                # ated with one pick (e.g., measured at different periods)
+                amp_phase_hints = []
+                amp_eval_modes = []
+                amp_finalweights = []
+                amp_par1s = []
+                amp_par2s = []
+                amp_residuals = []
+                mag_residuals = []
+                for j, amp in enumerate(amp_list):
+                    # check if the amplitude and pick reference the same phase
+                    # - then the amplitude in the line below the pick.
+                    if (pick.phase_hint and
+                            (pick.phase_hint == amplitudes[j].type or
+                             pick.phase_hint[1:] == amplitudes[j].type)
+                            and _is_iasp_ampl_phase(pick.phase_hint)):
+                        is_amp_pick = True
+                    mag_hint = (
+                        amplitudes[j].magnitude_hint or amplitudes[j].type)
+                    if (mag_hint is not None and
+                            mag_hint.upper() in ['AML', 'ML']):
+                        amp_phase_hints.append('IAML')
+                    else:
+                        amp_phase_hints.append('A')
+                    amp_eval_modes.append(' ' or INV_EVALUTATION_MAPPING.get(
+                        amplitude.evaluation_mode, None))
+                    amp_finalweights.append('  ')
+                    amp_par1s.append(_str_conv(amp, rounded=1).rjust(7)[0:7])
+                    amp_par2s.append(
+                        _str_conv(peri, rounded=peri_round).rjust(6)[0:6])
+                    # Get StationMagnitude that corresponds to the amplitude to
+                    # print magnitude residual
+                    tr_mag = [
+                        sta_mag for sta_mag in event.station_magnitudes
+                        if (sta_mag.amplitude_id == amplitudes[j].resource_id
+                            and sta_mag.creation_info.agency_id
+                            == pick.creation_info.agency_id
+                            and sta_mag.station_magnitude_type
+                            == amplitudes[j].magnitude_hint)]
+                    amp_residuals.append('     ')
+                    if len(tr_mag) > 0:
+                        if len(tr_mag) > 1:
+                            msg = ('Nordic files need one trace-amplitude for '
+                                   + 'each trace / station-magnitude only.')
+                            warnings.warn(msg)
+                        mag_residuals.append(tr_mag[0].mag_errors.uncertainty)
+                        amp_residuals[j] = _str_conv(
+                            mag_residuals[j], rounded=2).rjust(5)[0:5]
 
             agency = '   '
             author = '   '
@@ -2215,19 +2235,20 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     distance=distance.rjust(5)[0:5],
                     caz=_str_conv(caz).rjust(3)[0:3]))
             if add_amp_line:
-                pick_strings.append(pick_string_formatter.format(
-                    station=pick.waveform_id.station_code,
-                    channel=channel_code, network=network_code,
-                    location=location_code, impulsivity=' ',
-                    phase_hint=amp_phase_hint.ljust(8)[0:8], weight=' ',
-                    eval_mode=amp_eval_mode, hour=pick_hour,
-                    minute=pick.time.minute,
-                    seconds=_str_conv(pick_seconds, rounded=3).rjust(6),
-                    par1=amp_par1, par2=amp_par2, agency=agency, author=author,
-                    ain='     ', residual=amp_residual,
-                    finalweight=amp_finalweight,
-                    distance=distance.rjust(5)[0:5],
-                    caz=_str_conv(caz).rjust(3)[0:3]))
+                for j, amp in enumerate(amp_list):
+                    pick_strings.append(pick_string_formatter.format(
+                        station=pick.waveform_id.station_code,
+                        channel=channel_code, network=network_code,
+                        location=location_code, impulsivity=' ',
+                        phase_hint=amp_phase_hints[j].ljust(8)[0:8],
+                        weight=' ', eval_mode=amp_eval_modes[j],
+                        hour=pick_hour, minute=pick.time.minute,
+                        seconds=_str_conv(pick_seconds, rounded=3).rjust(6),
+                        par1=amp_par1s[j], par2=amp_par2s[j], agency=agency,
+                        author=author, ain='     ', residual=amp_residuals[j],
+                        finalweight=amp_finalweights[j],
+                        distance=distance.rjust(5)[0:5],
+                        caz=_str_conv(caz).rjust(3)[0:3]))
             if add_baz_line:
                 pick_strings.append(pick_string_formatter.format(
                     station=pick.waveform_id.station_code,
