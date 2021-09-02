@@ -2155,8 +2155,6 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     peri = ' '
                     peri_round = False
                     amp = None
-                    coda_eval_mode = INV_EVALUTATION_MAPPING.get(
-                        amplitude.evaluation_mode, None)
                 if nordic_format == 'OLD':  # only use 1st amplitude
                     break
                 amp_list.append(amp)
@@ -2296,9 +2294,13 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                 add_amp_line = True
                 # In New Nordic format, multiple amplitudes can now be associ-
                 # ated with one pick (e.g., measured at different periods)
-                amp_phase_hints, amp_eval_modes, amp_finalweights = [], [], []
-                amp_par1s, amp_par2s = [], []
-                amp_residuals, mag_residuals = [], []
+                amp_phase_hints = []
+                amp_eval_modes = []
+                amp_finalweights = []
+                amp_par1s = []
+                amp_par2s = []
+                amp_residuals = []
+                mag_residuals = []
                 for j, amp in enumerate(amp_list):
                     # check if the amplitude and pick reference the same phase
                     # - then the amplitude in the line below the pick.
@@ -2325,9 +2327,8 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     tr_mag = [
                         sta_mag for sta_mag in event.station_magnitudes
                         if (sta_mag.amplitude_id == amplitudes[j].resource_id
-                            and (not sta_mag.creation_info or
-                                 sta_mag.creation_info.agency_id
-                                 == pick.creation_info.agency_id)
+                            and sta_mag.creation_info.agency_id
+                            == pick.creation_info.agency_id
                             and sta_mag.station_magnitude_type
                             == amplitudes[j].magnitude_hint)]
                     amp_residuals.append('     ')
@@ -2368,19 +2369,6 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     finalweight=finalweight,
                     distance=distance.rjust(5)[0:5],
                     caz=_str_conv(caz).rjust(3)[0:3]))
-            if add_coda_line:
-                pick_strings.append(pick_string_formatter.format(
-                    station=pick.waveform_id.station_code,
-                    channel=channel_code, network=network_code,
-                    location=location_code, impulsivity=' ',
-                    phase_hint=coda_phase_hint.ljust(8)[0:8],
-                    weight=' ', eval_mode=coda_eval_mode,
-                    hour=pick_hour, minute=pick.time.minute,
-                    seconds=_str_conv(pick_seconds, rounded=3).rjust(6),
-                    par1=coda_par1, par2=coda_par2, agency=agency,
-                    author=author, ain='     ', residual=coda_residual,
-                    finalweight=' ', distance=distance.rjust(5)[0:5],
-                    caz=_str_conv(caz).rjust(3)[0:3]))
             if add_amp_line:
                 for j, amp in enumerate(amp_list):
                     pick_strings.append(pick_string_formatter.format(
@@ -2396,7 +2384,7 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                         finalweight=amp_finalweights[j],
                         distance=distance.rjust(5)[0:5],
                         caz=_str_conv(caz).rjust(3)[0:3]))
-            if add_BAZ_line:
+            if add_baz_line:
                 pick_strings.append(pick_string_formatter.format(
                     station=pick.waveform_id.station_code,
                     channel=channel_code, network=network_code,
