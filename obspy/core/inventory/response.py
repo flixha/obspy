@@ -1155,7 +1155,7 @@ class Response(ComparingObject):
             stages = self.response_stages[slice(start_stage, end_stage)]
             ref = stages[0].get_response(frequencies=f, fast=fast)
             for stage in stages[1:]:
-                ref *= stage.get_response(frequencies=f, fast=fast)
+                ref = ref * stage.get_response(frequencies=f, fast=fast)
             resp *= self.instrument_sensitivity.value / np.abs(ref[0])
 
         # By now the response is in the input units of the first stage.
