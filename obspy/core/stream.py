@@ -1872,6 +1872,10 @@ class Stream(object):
                 [net, sta, loc, chan] = id.upper().split('.')
 
         traces = []
+        quick_check = False
+        if (id is not None and not any(['?' in id or '*' in id or '[' in id])):
+            quick_check = True
+            [net, sta, loc, chan] = id.split('.')
         for trace in traces_after_inventory_filter:
             if quick_check:
                 if (trace.stats.network.upper() == net
