@@ -917,8 +917,6 @@ class Stream(object):
         :param transparent: Make all backgrounds transparent (True/False). This
             will override the ``bgcolor`` and ``face_color`` arguments.
             Defaults to ``False``.
-        :param number_of_ticks: The number of ticks on the x-axis.
-            Defaults to ``4``.
         :param tick_format: The way the time axis is formatted.
             Defaults to ``'%H:%M:%S'`` or ``'%.2f'`` if ``type='relative'``.
         :param tick_rotation: Tick rotation in degrees.
@@ -1006,6 +1004,8 @@ class Stream(object):
             backslashes, or use r-prefixed strings, e.g.,
             ``r"$\\\\frac{m}{s}$"``.
             Defaults to ``None``, meaning no scale is drawn.
+        :param number_of_ticks: The number of ticks on the x-axis.
+            Defaults to ``4``.
         :param events: An optional list of events can be drawn on the plot if
             given.  They will be displayed as yellow stars with optional
             annotations.  They are given as a list of dictionaries. Each
@@ -1858,7 +1858,18 @@ class Stream(object):
                       "mutually exclusive!"
                 raise ValueError(msg)
         traces = []
+        quick_check = False
+        if (id is not None and not any(['?' in id or '*' in id or '[' in id])):
+            quick_check = True
+            [net, sta, loc, chan] = id.split('.')
         for trace in traces_after_inventory_filter:
+            if quick_check:
+                if (trace.stats.network == net
+                        and trace.stats.station == sta
+                        and trace.stats.location == loc
+                        and trace.stats.channel == chan):
+                    traces.append(trace)
+                continue
             # skip trace if any given criterion is not matched
             if id and not fnmatch.fnmatch(trace.id.upper(), id.upper()):
                 continue
