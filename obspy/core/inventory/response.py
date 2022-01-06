@@ -177,7 +177,7 @@ class ResponseStage(ComparingObject):
     def _repr_pretty_(self, p, cycle):
         p.text(str(self))
 
-    def get_response(self, frequencies, **kwargs):
+    def get_response(self, frequencies):
         """
         :param frequencies: Frequency range to get resp curve over
         :return: The curve describing this response stage
@@ -339,23 +339,20 @@ class PolesZerosResponseStage(ResponseStage):
         else:
             raise ValueError(msg)
 
-    def get_response(self, frequencies, n_frequencies_limit_for_interp=10000):
+    def get_response(self, frequencies, fast=True):
         """
         Produce the response curve from this stage's data for a given
         range of frequencies
         :param frequencies: Frequency range to get resp curve over
-        :param n_frequencies_limit_for_interp:
-            Indicates a limit for the number of frequencies (=number of samples
-            in a trace) for which the response curve is calculated. Above this
-            number of frequencies, the response curve is interpolated. Speeds
-            up response-calculation for traces with many samples, e.g., >10000.
         :return: The curve describing this response stage
         """
         # Has to be imported here for now to avoid circular imports.
         from obspy.signal.invsim import paz_to_freq_resp
-
-        interpolate, resp_frequencies = _check_response_interpolation(
-            frequencies, n_frequencies_limit_for_interp)
+        if len(frequencies) > 10000 and fast:
+            resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
+                                           10000, dtype=np.float64)
+        else:
+            resp_frequencies = frequencies
 
         resp = paz_to_freq_resp(
             poles=np.array(self._poles, dtype=np.complex128),
@@ -364,13 +361,13 @@ class PolesZerosResponseStage(ResponseStage):
             frequencies=resp_frequencies, freq=False) * self.stage_gain
 
         # If required, do interpolation of amplitude and phase of the response
-        if interpolate:
+        if len(frequencies) > 10000 and fast:
             amp = np.abs(resp)
-            # phase = np.radians(np.unwrap(np.angle(resp, deg=False))) / np.pi
-            #phase = np.unwrap(np.angle(resp, deg=False))
-            phase = np.angle(resp)
-            amp = _interpolate(resp_frequencies, amp, frequencies)
-            phase = _interpolate(resp_frequencies, phase, frequencies)
+            phase = np.radians(np.unwrap(np.angle(resp, deg=False))) / np.pi
+            amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, amp, k=2)(frequencies)
+            phase = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, phase, k=2)(frequencies)
             final_resp = np.zeros_like(frequencies) + 0j
             final_resp.real = amp * np.cos(phase)
             final_resp.imag = amp * np.sin(phase)
@@ -548,16 +545,11 @@ class CoefficientsTypeResponseStage(ResponseStage):
         else:
             raise ValueError(msg)
 
-    def get_response(self, frequencies, n_frequencies_limit_for_interp=10000):
+    def get_response(self, frequencies, fast=True):
         """
         Produce the response curve from this coefficient
         response stage for a range of frequencies
         :param frequencies: Frequency range to get resp curve over
-        :param n_frequencies_limit_for_interp:
-            Indicates a limit for the number of frequencies (=number of samples
-            in a trace) for which the response curve is calculated. Above this
-            number of frequencies, the response curve is interpolated. Speeds
-            up response-calculation for traces with many samples, e.g., >10000.
         :return: The curve describing this response stage
         """
         # Decimation blockette, e.g. gain only!
@@ -573,10 +565,6 @@ class CoefficientsTypeResponseStage(ResponseStage):
                                            10000, dtype=np.float64)
         else:
             resp_frequencies = frequencies
-
-        # Check if interpolation is required so save time for long traces.
-        interpolate, resp_frequencies = _check_response_interpolation(
-            frequencies, n_frequencies_limit_for_interp)
 
         # While most cases we expect this to represent a Bkt. 54 and
         # thus not have a denominator, if the transfer function is
@@ -595,9 +583,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
                 # we get the numerator and denominator and do the math
                 # on them in their representation as magnitude and
                 # phase rather than standard complex format
-
-                # rename to be concise and match conventions
-                w = resp_frequencies
+                w = resp_frequencies  # rename to be concise and match conventions
 
                 resp = np.zeros_like(w) + 0j
                 for idx, num in enumerate(self.numerator):
@@ -611,16 +597,12 @@ class CoefficientsTypeResponseStage(ResponseStage):
                 amp /= abs(resp)
                 phase -= np.arctan2(resp.imag, resp.real)
 
-                if interpolate:
-                    amp = _interpolate(w, amp, frequencies)
-                    phase = _interpolate(w, phase, frequencies)
-
                 return amp * np.cos(phase) + amp * np.sin(phase) * 1j
         elif self.cf_transfer_function_type == "ANALOG (RADIANS/SECOND)":
             # XXX: Untested so far!
             resp = scipy.signal.freqs(
-                b=self.numerator, a=[1.0], worN=resp_frequencies
-                / (np.pi * 2.0))[1]
+                b=self.numerator, a=[1.0], worN=resp_frequencies\
+                    / (np.pi * 2.0))[1]
             gain_freq_amp = np.abs(scipy.signal.freqs(
                 b=self.numerator, a=[1.0],
                 worN=[self.stage_gain_frequency / (np.pi * 2.0)])[1])
@@ -650,12 +632,13 @@ class CoefficientsTypeResponseStage(ResponseStage):
         if self.cf_transfer_function_type != 'DIGITAL':
             amp *= self.stage_gain / gain_freq_amp
 
-        # If an interpolation limit (n_frequencies_limit_for_interp) is set,
-        # then interpolate the amplitude and phase onto the originally
-        # requested frequencies.
-        if interpolate:
-            amp = _interpolate(resp_frequencies, amp, frequencies)
-            phase = _interpolate(resp_frequencies, phase, frequencies)
+        # If "fast", then interpolate the amplitude and phase onto the
+        # originally requested frequencies.
+        if len(frequencies) > 10000 and fast:
+            amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, amp, k=2)(frequencies)
+            phase = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, phase, k=2)(frequencies)
             final_resp = np.zeros_like(frequencies) + 0j
         else:
             final_resp = np.empty_like(resp)
@@ -828,15 +811,9 @@ class FIRResponseStage(ResponseStage):
             new_values.append(x)
         self._coefficients = new_values
 
-    def get_response(self, frequencies, n_frequencies_limit_for_interp=10000):
+    def get_response(self, frequencies, fast=True):
         """
-        Given Computes the
-        :param frequencies: Discrete frequencies to calculate response for.
-        :param n_frequencies_limit_for_interp:
-            Indicates a limit for the number of frequencies (=number of samples
-            in a trace) for which the response curve is calculated. Above this
-            number of frequencies, the response curve is interpolated. Speeds
-            up response-calculation for traces with many samples, e.g., >10000.
+        Given Computes the 
         """
         # Decimation blockette, e.g. gain only!
         if not len(self._coefficients):
@@ -853,18 +830,21 @@ class FIRResponseStage(ResponseStage):
         frequencies = frequencies / sr * np.pi * 2.0
         # Compute response for a limited number of frequencies and interpolate
         # inbetween - 10000 appears fine for high precision and speed.
-        interpolate, resp_frequencies = _check_response_interpolation(
-            frequencies, n_frequencies_limit_for_interp)
-
-        resp = scipy.signal.freqz(b=coefficients, a=[1.],
-                                  worN=resp_frequencies)[1]
-        # Here we zero the phase (FIR) and return the amplitude
-        amp = np.abs(resp) * self.stage_gain + 0j
-        amp = amp.real
-
-        if interpolate:
-            amp = _interpolate(resp_frequencies, amp, frequencies)
-
+        if len(frequencies) > 10000 and fast:
+            resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
+                                           10000, dtype=np.float64)
+            resp = scipy.signal.freqz(b=coefficients, a=[1.],
+                                      worN=resp_frequencies)[1]
+            amp = np.abs(resp) * self.stage_gain + 0j
+            amp = amp.real
+            amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                    resp_frequencies, amp, k=2)(frequencies)
+        else:
+            resp = scipy.signal.freqz(b=coefficients, a=[1.],
+                                      worN=frequencies)[1]
+            # Here we zero the phase (FIR) and return the amplitude
+            amp = np.abs(resp) * self.stage_gain + 0j
+            amp = amp.real
         return amp
 
 
@@ -1079,7 +1059,7 @@ class Response(ComparingObject):
 
     def get_response_for_window_size(self, t_samp, nfft, output="VEL",
                                      start_stage=None, end_stage=None,
-                                     n_frequencies_limit_for_interp=10000):
+                                     fast=True):
         """
         Returns frequency response and corresponding frequencies for
         the given sample rate delta and FFT window size
@@ -1104,12 +1084,6 @@ class Response(ComparingObject):
         :type end_stage: int, optional
         :param end_stage: Stage sequence number of last stage that will be
             used (disregarding all later stages).
-        :type n_frequencies_limit_for_interp: int
-        :param n_frequencies_limit_for_interp:
-            Indicates a limit for the number of frequencies (=number of samples
-            in a trace) for which the response curve is calculated. Above this
-            number of frequencies, the response curve is interpolated. Speeds
-            up response-calculation for traces with many samples, e.g., >10000.
         :rtype: tuple of two arrays
         :returns: frequency response and corresponding frequencies
         """
@@ -1124,11 +1098,11 @@ class Response(ComparingObject):
 
         response = self.get_response(
             freqs, output=output, start_stage=start_stage, end_stage=end_stage,
-            n_frequencies_limit_for_interp=n_frequencies_limit_for_interp)
+            fast=fast)
         return response, freqs
 
     def get_response(self, frequencies, output="velocity", start_stage=None,
-                     end_stage=None, n_frequencies_limit_for_interp=10000):
+                     end_stage=None, fast=True):
         """
         Returns the frequency response for given frequencies.
         :type frequencies: list of float
@@ -1147,12 +1121,10 @@ class Response(ComparingObject):
         :type end_stage: int, optional
         :param end_stage: Stage sequence number of last stage that will be
             used (disregarding all later stages).
-        :type n_frequencies_limit_for_interp: int
-        :param n_frequencies_limit_for_interp:
-            Indicates a limit for the number of frequencies (=number of samples
-            in a trace) for which the response curve is calculated. Above this
-            number of frequencies, the response curve is interpolated. Speeds
-            up response-calculation for traces with many samples, e.g., >10000.
+        :type fast: bool
+        :param fast: When set to True (default), then the calculation of the
+            response for a large number of frequencies is sped up through
+            interpolation. Relevant for traces with >10000 samples.
         :rtype: :class:`numpy.ndarray`
         :returns: frequency response at requested frequencies
         """
@@ -1177,14 +1149,10 @@ class Response(ComparingObject):
         stages = self.response_stages[slice(start_stage, end_stage)]
         # map 0j here to ensure the curve is complex values
         # which it may not be if we start on a gain stage
-        resp = stages[0].get_response(frequencies=frequencies,
-                                      n_frequencies_limit_for_interp
-                                      =n_frequencies_limit_for_interp) + 0j
+        resp = stages[0].get_response(frequencies=frequencies, fast=fast) + 0j
         for stage in stages[1:]:
             try:
-                resp *= stage.get_response(frequencies=frequencies,
-                                           n_frequencies_limit_for_interp
-                                           =n_frequencies_limit_for_interp)
+                resp *= stage.get_response(frequencies=frequencies, fast=fast)
             except AttributeError:
                 raise NotImplementedError
 
@@ -1193,13 +1161,9 @@ class Response(ComparingObject):
         if start_stage == 0 and end_stage is None:
             f = np.array([self.instrument_sensitivity.frequency])
             stages = self.response_stages[slice(start_stage, end_stage)]
-            ref = stages[0].get_response(frequencies=f,
-                                         n_frequencies_limit_for_interp
-                                         =n_frequencies_limit_for_interp)
+            ref = stages[0].get_response(frequencies=f, fast=fast)
             for stage in stages[1:]:
-                ref *= stage.get_response(frequencies=f,
-                                          n_frequencies_limit_for_interp
-                                          =n_frequencies_limit_for_interp)
+                ref = ref * stage.get_response(frequencies=f, fast=fast)
             resp *= self.instrument_sensitivity.value / np.abs(ref[0])
 
         # By now the response is in the input units of the first stage.
@@ -1207,11 +1171,7 @@ class Response(ComparingObject):
             # Displacement -> velocity - acceleration.
             self.core_unit_enum.displacement: 0,
             self.core_unit_enum.velocity: 1,
-            self.core_unit_enum.acceleration: 2,
-            # XXX: Kind of strange but evalresp does the same for these.
-            self.core_unit_enum.volts: 1,
-            self.core_unit_enum.temperature: 0,
-            }
+            self.core_unit_enum.acceleration: 2}
         unit_type = self._get_unit_type(self.response_stages[0].input_units)
         if unit_type not in diff_and_int_map:
             raise ValueError("Cannot convert %s to %s." % (unit_type, output))
@@ -1850,8 +1810,10 @@ class Response(ComparingObject):
                     raise ValueError(msg % (min_f_avail, max_f_avail, min_f,
                                             max_f))
 
-                amp = _interpolate(f, amp, frequencies)
-                phase = _interpolate(f, phase, frequencies)
+                amp = scipy.interpolate.InterpolatedUnivariateSpline(
+                    f, amp, k=2)(frequencies)
+                phase = scipy.interpolate.InterpolatedUnivariateSpline(
+                    f, phase, k=2)(frequencies)
 
                 # Set static offset to zero.
                 amp[amp == 0] = 0
