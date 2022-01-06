@@ -326,7 +326,6 @@ class Trace(object):
         See also: :meth:`Trace.__str__`.
     """
     _always_contiguous = True
-    _max_processing_info = 100
 
     def __init__(self, data=np.array([]), header=None):
         # make sure Trace gets initialized with suitable ndarray as self.data
@@ -1645,7 +1644,7 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
 
     @skip_if_no_data
     @_add_processing_info
-    def resample(self, sampling_rate, window='hann', no_filter=True,
+    def resample(self, sampling_rate, window='hanning', no_filter=True,
                  strict_length=False):
         """
         Resample trace data using Fourier method. Spectra are linearly
@@ -1656,7 +1655,7 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
         :type window: :class:`numpy.ndarray`, callable, str, float, or tuple,
             optional
         :param window: Specifies the window applied to the signal in the
-            Fourier domain. Defaults to ``'hann'`` window. See
+            Fourier domain. Defaults to ``'hanning'`` window. See
             :func:`scipy.signal.resample` for details.
         :type no_filter: bool, optional
         :param no_filter: Deactivates automatic filtering if set to ``True``.
@@ -2300,12 +2299,7 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
         trace's :class:`~obspy.core.trace.Stats` object.
         """
         proc = self.stats.setdefault('processing', [])
-        if len(proc) == self._max_processing_info-1:
-            msg = ('List of processing information in Trace.stats.processing '
-                   'reached maximal length of {} entries.')
-            warnings.warn(msg.format(self._max_processing_info))
-        if len(proc) < self._max_processing_info:
-            proc.append(info)
+        proc.append(info)
 
     @_add_processing_info
     def split(self):
@@ -2680,8 +2674,7 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
     @_add_processing_info
     def remove_response(self, inventory=None, output="VEL", water_level=60,
                         pre_filt=None, zero_mean=True, taper=True,
-                        taper_fraction=0.05,
-                        n_frequencies_limit_for_interp=10000,
+                        taper_fraction=0.05, fast=True,
                         plot=False, fig=None, **kwargs):
         """
         Deconvolve instrument response.
@@ -2701,21 +2694,10 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
         (specifying the four corner frequencies of the frequency taper as a
         tuple in `pre_filt`).
 
-        .. warning::
-            The water level approach can lead to unexpected results that
-            strongly suppress valid/wanted parts of the spectrum if the
-            requested output unit is not the native quantity of the instrument,
-            i.e. the instrument response is not flat for that quantity (e.g.
-            requesting output ``"VEL"`` for an accelerometer). For details see
-            https://github.com/obspy/obspy/issues/3136.
-            In this case it might be better to set ``water_level=None`` and use
-            ``pre_filt`` option instead.
-
         .. note::
 
             Any additional kwargs will be passed on to
-            :meth:`Response.get_evalresp_response()
-            <obspy.core.inventory.response.Response.get_evalresp_response>`,
+            :meth:`obspy.core.inventory.response.Response.get_evalresp_response`,
             see documentation of that method for further customization (e.g.
             start/stop stage and hiding overall sensitivity mismatch warning).
 
@@ -2726,8 +2708,8 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
             :meth:`~obspy.core.trace.Trace.simulate` with the identical
             response provided as
             a (dataless) SEED or RESP file and when using the same
-            ``water_level`` and ``pre_filt`` (and options ``sacsim=True`` and
-            ``pitsasim=False`` which influence very minor details in detrending
+            `water_level` and `pre_filt` (and options `sacsim=True` and
+            `pitsasim=False` which influence very minor details in detrending
             and tapering).
 
         .. rubric:: Example
@@ -2812,17 +2794,6 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
             in time domain prior to deconvolution.
         :type taper_fraction: float
         :param taper_fraction: Taper fraction of cosine taper to use.
-<<<<<<< HEAD
-
-=======
-        :type n_frequencies_limit_for_interp: int
-        :param n_frequencies_limit_for_interp: Indicates a limit for the number
-            of frequencies (=number of samples in a trace) for which the
-            response curve is calculated. Above this number of frequencies, the
-            response curve is interpolated. Speeds up response-calculation for
-            traces with many samples, e.g., >10000. Set to None to avoid all
-            interpolation.
->>>>>>> c453f2d7f (Change type of argument for response-interpolation (bool->int))
         :type plot: bool or str
         :param plot: If `True`, brings up a plot that illustrates how the
             data are processed in the frequency domain in three steps. First by
@@ -2947,12 +2918,7 @@ seismometer_correction_simulation.html#using-a-resp-file>`_.
         # optionally prefilter in frequency domain and/or apply water level
         freq_response, freqs = \
             response.get_response_for_window_size(
-<<<<<<< HEAD
                 self.stats.delta, nfft, output=output, fast=fast,
-=======
-                self.stats.delta, nfft, output=output,
-                n_frequencies_limit_for_interp=n_frequencies_limit_for_interp,
->>>>>>> c453f2d7f (Change type of argument for response-interpolation (bool->int))
                 **kwargs)
 
         if plot:
