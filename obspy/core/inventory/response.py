@@ -177,7 +177,7 @@ class ResponseStage(ComparingObject):
     def _repr_pretty_(self, p, cycle):
         p.text(str(self))
 
-    def get_response(self, frequencies):
+    def get_response(self, frequencies, **kwargs):
         """
         :param frequencies: Frequency range to get resp curve over
         :return: The curve describing this response stage
