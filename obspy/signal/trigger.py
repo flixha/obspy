@@ -83,28 +83,24 @@ def recursive_sta_lta_py(a, nsta, nlta):
 
     .. seealso:: [Withers1998]_ (p. 98) and [Trnkoczy2012]_
     """
-    try:
-        a = a.tolist()
-    except Exception:
-        pass
     ndat = len(a)
     # compute the short time average (STA) and long time average (LTA)
     # given by Evans and Allen
     csta = 1. / nsta
     clta = 1. / nlta
     sta = 0.
-    lta = 1e-99  # avoid zero division
-    charfct = [0.0] * len(a)
+    lta = np.finfo(0.0).tiny  # avoid zero division
+    a = np.square(a)
+    charfct = np.zeros(ndat, dtype=np.float64)
     icsta = 1 - csta
     iclta = 1 - clta
     for i in range(1, ndat):
-        sq = a[i] ** 2
-        sta = csta * sq + icsta * sta
-        lta = clta * sq + iclta * lta
+        sta = csta * a[i] + icsta * sta
+        lta = clta * a[i] + iclta * lta
         charfct[i] = sta / lta
-        if i < nlta:
-            charfct[i] = 0.
-    return np.array(charfct)
+    charfct[:nlta] = 0
+
+    return charfct
 
 
 def carl_sta_trig(a, nsta, nlta, ratio, quiet):
@@ -216,10 +212,7 @@ def classic_sta_lta_py(a, nsta, nlta):
     """
     # The cumulative sum can be exploited to calculate a moving average (the
     # cumsum function is quite efficient)
-    sta = np.cumsum(a ** 2)
-
-    # Convert to float
-    sta = np.require(sta, dtype=np.float)
+    sta = np.cumsum(a ** 2, dtype=np.float64)
 
     # Copy for LTA
     lta = sta.copy()
@@ -279,14 +272,12 @@ def z_detect(a, nsta):
 
     .. seealso:: [Withers1998]_, p. 99
     """
-    m = len(a)
-    #
     # Z-detector given by Swindell and Snell (1977)
-    sta = np.zeros(len(a), dtype=np.float64)
-    # Standard Sta
-    pad_sta = np.zeros(nsta)
-    for i in range(nsta):  # window size to smooth over
-        sta = sta + np.concatenate((pad_sta, a[i:m - nsta + i] ** 2))
+    # Standard Sta shifted by 1
+    sta = np.cumsum(a ** 2, dtype=np.float64)
+    sta[nsta + 1:] = sta[nsta:-1] - sta[:-nsta - 1]
+    sta[nsta] = sta[nsta - 1]
+    sta[:nsta] = 0
     a_mean = np.mean(sta)
     a_std = np.std(sta)
     _z = (sta - a_mean) / a_std
@@ -394,6 +385,7 @@ def pk_baer(reltrc, samp_int, tdownmax, tupevent, thr1, thr2, preset_len,
     :return: (pptime, pfm [,cf]) pptime sample number of parrival;
         pfm direction of first motion (U or D), optionally also the
         characteristic function.
+
     .. note:: currently the first sample is not taken into account
 
     .. seealso:: [Baer1987]_
@@ -421,6 +413,36 @@ def pk_baer(reltrc, samp_int, tdownmax, tupevent, thr1, thr2, preset_len,
         return pptime.value + 1, pfm.value.decode('utf-8'), cf_arr
     else:
         return pptime.value + 1, pfm.value.decode('utf-8')
+
+
+def aic_simple(a):
+    r"""
+    Simple Akaike Information Criterion [Maeda1985]_.
+
+    It's computed directly from input data :math:`a` and defined as
+
+    .. math::
+        \text{AIC}(k) = k\log(\text{Var}(a_{1..k})) +
+                        (N-k-1)\log(\text{Var}(a_{k+1..N}))
+
+    which variance denoted as :math:`\text{Var}`.
+
+    The true output is one data sample less. To make it convenient with other
+    metrics in this module, where the output length is preserved, the last
+    element is appended to the output: ``aic[-2] == aic[-1]``.
+
+    :type a: :class:`numpy.ndarray` or :class:`list`
+    :param a: Input time series
+    :rtype: :class:`numpy.ndarray`
+    :return: aic - Akaike Information Criterion array
+    """
+    n = len(a)
+    if n <= 2:
+        return np.zeros(n, dtype=np.float64)
+    a = np.ascontiguousarray(a, np.float64)
+    aic_res = np.empty(n, dtype=np.float64)
+    clibsignal.aic_simple(aic_res, a, n)
+    return aic_res
 
 
 def ar_pick(a, b, c, samp_rate, f1, f2, lta_p, sta_p, lta_s, sta_s, m_p, m_s,

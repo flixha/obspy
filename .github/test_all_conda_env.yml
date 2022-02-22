@@ -1,0 +1,26 @@
+name: test
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # obspy
+  - decorator
+  - lxml
+  - matplotlib
+  - numpy
+  - scipy
+  - requests
+  - setuptools
+  - sqlalchemy
+  # soft dependencies
+  - cartopy
+  - geographiclib
+  - pyshp
+  # tests
+  - packaging
+  - pip
+  - pip:
+    - pytest-json-report
+  - pyproj
+  - pytest
+  - pytest-cov

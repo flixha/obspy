@@ -22,6 +22,7 @@ import urllib.request as urllib_request
 
 import lxml
 import numpy as np
+import pytest
 import requests
 
 from obspy import UTCDateTime, read, read_inventory, Stream, Trace
@@ -39,6 +40,8 @@ from obspy.clients.fdsn.header import (DEFAULT_USER_AGENT, URL_MAPPINGS,
                                        FDSNNoServiceException,
                                        FDSNInternalServerException,
                                        FDSNTooManyRequestsException,
+                                       FDSNNotImplementedException,
+                                       FDSNBadGatewayException,
                                        FDSNServiceUnavailableException,
                                        FDSNUnauthorizedException,
                                        FDSNForbiddenException,
@@ -50,6 +53,7 @@ from obspy.geodetics import locations2degrees
 
 
 USER_AGENT = "ObsPy (test suite) " + " ".join(DEFAULT_USER_AGENT.split())
+pytestmark = pytest.mark.network
 
 
 def _normalize_stats(obj):
@@ -73,12 +77,12 @@ def failmsg(got, expected, ignore_lines=[]):
     excluded from the comparison.
     """
     if isinstance(got, str) and isinstance(expected, str):
-        got = [l for l in got.splitlines(True)
-               if all([x not in l for x in ignore_lines])]
-        expected = [l for l in expected.splitlines(True)
-                    if all([x not in l for x in ignore_lines])]
+        got = [line for line in got.splitlines(True)
+               if all([x not in line for x in ignore_lines])]
+        expected = [line for line in expected.splitlines(True)
+                    if all([x not in line for x in ignore_lines])]
         diff = Differ().compare(got, expected)
-        diff = "".join([l for l in diff if l[0] in "-+?"])
+        diff = "".join([line for line in diff if line[0] in "-+?"])
         if diff:
             return "\nDiff:\n%s" % diff
         else:
@@ -96,7 +100,7 @@ def normalize_version_number(string):
     """
     match = r'v[0-9]+\.[0-9]+\.[0-9]+'
     repl = re.sub(match, "vX.X.X", string).replace(",", "")
-    return [l.strip() for l in repl.splitlines()]
+    return [line.strip() for line in repl.splitlines()]
 
 
 class ClientTestCase(unittest.TestCase):
@@ -142,13 +146,18 @@ class ClientTestCase(unittest.TestCase):
             "http://[2001:db8::ff00:42:8329]",
             "http://[::ffff:192.168.89.9]",
             "http://jane",
-            "http://localhost"]
+            "http://localhost",
+            "http://hyphenated-internal-hostname",
+            "http://internal-machine.private",
+            "https://long-public-tld.international",
+            "http://punycode-tld.xn--fiqs8s"]
 
         test_urls_fails = [
             "http://",
             "http://127.0.1",
             "http://127.=.0.1",
-            "http://127.0.0.0.1"]
+            "http://127.0.0.0.1",
+            "http://tld.too.long." + ("x" * 64)]
         test_urls_fails += [
             "http://[]",
             "http://[1]",
@@ -158,14 +167,14 @@ class ClientTestCase(unittest.TestCase):
             "http://[1:2:2:4:5:6:7]"]
 
         for url in test_urls_valid:
-            self.assertEqual(
+            self.assertTrue(
                 self.client._validate_base_url(url),
-                True)
+                msg='%s should be valid' % url)
 
         for url in test_urls_fails:
-            self.assertEqual(
+            self.assertFalse(
                 self.client._validate_base_url(url),
-                False)
+                msg='%s should be invalid' % url)
 
     def test_url_building(self):
         """
@@ -333,6 +342,7 @@ class ClientTestCase(unittest.TestCase):
         # queryauth)
         self.assertEqual(client.user, user)
 
+    @pytest.mark.skip(reason='data no longer available')
     def test_trim_stream_after_get_waveform(self):
         """
         Tests that stream is properly trimmed to user requested times after
@@ -1533,6 +1543,26 @@ class ClientTestCase(unittest.TestCase):
                           "http://nofdsnservice.org")
 
     @mock.patch("obspy.clients.fdsn.client.download_url")
+    def test_not_implemented_exception(self, download_url_mock):
+        """
+        Verify that a client receiving a 501 'Not Implemented' status
+        raises an identifiable exception
+        """
+        download_url_mock.return_value = (501, None)
+        self.assertRaises(FDSNNotImplementedException,
+                          self.client.get_stations)
+
+    @mock.patch("obspy.clients.fdsn.client.download_url")
+    def test_bad_gateway_exception(self, download_url_mock):
+        """
+        Verify that a client receiving a 502 'Bad Gateway' status
+        raises an identifiable exception
+        """
+        download_url_mock.return_value = (502, None)
+        self.assertRaises(FDSNBadGatewayException,
+                          self.client.get_stations)
+
+    @mock.patch("obspy.clients.fdsn.client.download_url")
     def test_service_unavailable_exception(self, download_url_mock):
         """
         Verify that opening a client to a service temporarily unavailable
@@ -1568,6 +1598,7 @@ class ClientTestCase(unittest.TestCase):
         self.assertRaises(FDSNTooManyRequestsException,
                           self.client.get_stations)
 
+    @pytest.mark.skip(reason='Token is expired')
     def test_eida_token_resolution(self):
         """
         Tests that EIDA tokens are resolved correctly and new credentials get

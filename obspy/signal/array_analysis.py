@@ -825,7 +825,7 @@ def array_transff_freqslowness(coords, slim, sstep, fmin, fmax, fstep,
         for j, sy in enumerate(np.arange(symin, symax + sstep / 10., sstep)):
             for k, f in enumerate(np.arange(fmin, fmax + fstep / 10., fstep)):
                 _sum = 0j
-                for l in np.arange(len(coords)):
+                for l in np.arange(len(coords)):  # NOQA
                     _sum += np.exp(
                         complex(0., (coords[l, 0] * sx + coords[l, 1] * sy) *
                                 2 * np.pi * f))
@@ -893,7 +893,7 @@ def array_processing(stream, win_len, win_frac, sll_x, slm_x, sll_y, slm_y,
         and seconds) since the start of the used matplotlib time epoch
     :type method: int
     :param method: the method to use 0 == bf, 1 == capon
-    :type store: function
+    :type store: callable
     :param store: A custom function which gets called on each iteration. It is
         called with the relative power map and the time offset as first and
         second arguments and the iteration number as third argument. Useful for

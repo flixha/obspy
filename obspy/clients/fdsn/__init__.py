@@ -38,9 +38,11 @@ AUSPASS     http://auspass.edu.au
 BGR         http://eida.bgr.de
 EMSC        http://www.seismicportal.eu
 ETH         http://eida.ethz.ch
+GEOFON      http://geofon.gfz-potsdam.de
 GEONET      http://service.geonet.org.nz
 GFZ         http://geofon.gfz-potsdam.de
 ICGC        http://ws.icgc.cat
+IESDMC      http://batsws.earth.sinica.edu.tw
 INGV        http://webservices.ingv.it
 IPGP        http://ws.ipgp.fr
 IRIS        http://service.iris.edu
@@ -55,7 +57,8 @@ NOA         http://eida.gein.noa.gr
 ODC         http://www.orfeus-eu.org
 ORFEUS      http://www.orfeus-eu.org
 RASPISHAKE  https://fdsnws.raspberryshakedata.com
-RESIF       https://ws.resif.fr
+RESIF       http://ws.resif.fr
+RESIFPH5    http://ph5ws.resif.fr
 SCEDC       http://service.scedc.caltech.edu
 TEXNET      http://rtserve.beg.utexas.edu
 UIB-NORSAR  http://eida.geo.uib.no
@@ -245,7 +248,7 @@ from .header import URL_MAPPINGS  # NOQA
 
 # insert supported URL mapping list dynamically in docstring
 # we need an if clause because add_doctests() executes the file once again
-if r"%s" in Client.__init__.__doc__:
+if Client.__init__.__doc__ is not None and r"%s" in Client.__init__.__doc__:
     Client.__init__.__doc__ = \
         Client.__init__.__doc__ % \
         str(sorted(URL_MAPPINGS.keys())).strip("[]")

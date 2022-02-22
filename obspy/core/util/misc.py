@@ -19,6 +19,7 @@ import sys
 import tempfile
 import warnings
 from subprocess import STDOUT, CalledProcessError, check_output
+from pathlib import Path
 
 
 import numpy as np
@@ -28,7 +29,7 @@ WIN32 = sys.platform.startswith('win32')
 
 # The following dictionary maps the first character of the channel_id to the
 # lowest sampling rate this so called Band Code should be used for according
-# to: SEED MANUAL p.124
+# to SEED MANUAL p.124
 # We use this e.g. in seishub.client.getWaveform to request two samples more on
 # both start and end to cut to the samples that really are nearest to requested
 # start/end time afterwards.
@@ -47,7 +48,8 @@ BAND_CODE = {'F': 1000.0,
              'R': 0.0001,
              'P': 0.000001,
              'T': 0.0000001,
-             'Q': 0.00000001}
+             'Q': 0.00000001
+             }
 
 # Dict that stores results from load entry points
 _ENTRY_POINT_CACHE = {}
@@ -117,7 +119,7 @@ def score_at_percentile(values, per, limit=(), issorted=True):
     >>> score_at_percentile(a, 75, limit=(0, 100))
     42.5
 
-    This function is taken from :func:`scipy.stats.score_at_percentile`.
+    This function is taken from `scipy.stats.score_at_percentile`.
 
     Copyright (c) Gary Strangman
     """
@@ -370,6 +372,22 @@ def SuppressOutput():  # noqa
     # reset to original stdout/stderr
     sys.stdout = sys.__stdout__
     sys.stderr = sys.__stderr__
+
+
+@contextlib.contextmanager
+def change_directory(path):
+    """
+    A context manager to change directory to target path.
+
+    :param path: The path to change to.
+    :type path: A string or pathlib Path.
+    """
+    origin = Path().absolute()
+    try:
+        os.chdir(path)
+        yield
+    finally:
+        os.chdir(origin)
 
 
 @contextlib.contextmanager
@@ -702,27 +720,6 @@ def _yield_resource_id_parent_attr(obj):
                         yield out
 
     return func(obj)
-
-
-def _seed_id_map(
-        inventory=None, user_id_map=None, key='{sta.code}',
-        seed_factory='{net.code}.{{}}.{cha.location_code}.{cha.code:.2}{{}}'):
-    """
-    Return mapping between station code and seed id expressions
-    """
-    id_map = {}
-    if inventory is not None:
-        msg = 'Multiple seed ids found for station {}. Use first.'
-        for net in inventory:
-            for sta in net:
-                for cha in sta:
-                    k = key.format(net=net, sta=sta, cha=cha)
-                    v = seed_factory.format(net=net, sta=sta, cha=cha)
-                    if id_map.setdefault(k, v) != v:
-                        warnings.warn(msg.format(k))
-    if user_id_map is not None:
-        id_map.update(user_id_map)
-    return id_map
 
 
 if __name__ == '__main__':

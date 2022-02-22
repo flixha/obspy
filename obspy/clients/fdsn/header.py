@@ -60,6 +60,14 @@ class FDSNInternalServerException(FDSNException):
     status_code = 500
 
 
+class FDSNNotImplementedException(FDSNException):
+    status_code = 501
+
+
+class FDSNBadGatewayException(FDSNException):
+    status_code = 502
+
+
 class FDSNServiceUnavailableException(FDSNException):
     status_code = 503
 
@@ -97,8 +105,10 @@ URL_MAPPINGS = {
     "ETH": "http://eida.ethz.ch",
     "EMSC": "http://www.seismicportal.eu",
     "GEONET": "http://service.geonet.org.nz",
+    "GEOFON": "http://geofon.gfz-potsdam.de",
     "GFZ": "http://geofon.gfz-potsdam.de",
     "ICGC": "http://ws.icgc.cat",
+    "IESDMC": "http://batsws.earth.sinica.edu.tw",
     "INGV": "http://webservices.ingv.it",
     "IPGP": "http://ws.ipgp.fr",
     "IRIS": "http://service.iris.edu",
@@ -112,17 +122,19 @@ URL_MAPPINGS = {
     "NOA": "http://eida.gein.noa.gr",
     "ODC": "http://www.orfeus-eu.org",
     "ORFEUS": "http://www.orfeus-eu.org",
-    "RESIF": "https://ws.resif.fr",
+    "RESIF": "http://ws.resif.fr",
+    "RESIFPH5": "http://ph5ws.resif.fr",
     "RASPISHAKE": "https://fdsnws.raspberryshakedata.com",
     "SCEDC": "http://service.scedc.caltech.edu",
     "TEXNET": "http://rtserve.beg.utexas.edu",
     "UIB-NORSAR": "http://eida.geo.uib.no",
     "USGS": "http://earthquake.usgs.gov",
-    "USP": "http://sismo.iag.usp.br"}
+    "USP": "http://sismo.iag.usp.br",
+}
 URL_MAPPING_SUBPATHS = {
     "IRISPH5": "/ph5ws",
-    }
-URL_DEFAULT_SUBPATH = '/fdsnws'
+}
+URL_DEFAULT_SUBPATH = "/fdsnws"
 
 FDSNWS = ("dataselect", "event", "station")
 

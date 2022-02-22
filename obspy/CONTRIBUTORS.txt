@@ -14,6 +14,7 @@ Bes de Berc, Maxime
 Beyreuther, Moritz
 Boltz, Shawn
 Bonaimé, Sébastien
+Buist, Jan Willem
 Carapetis, Anthony
 Carothers, Lloyd
 Chamberlain, Calum
@@ -82,6 +83,7 @@ Rapagnani, Giovanni
 Parker, Tom
 Pestourie, Romain
 Pourpoint, Maeva
+Rapagnani, Giovanni
 Reyes, Celso
 Ringler, Adam
 Rothenhäusler, Nicolas
@@ -90,6 +92,7 @@ Sales de Andrade, Elliott
 Satriano, Claudio
 Saul, Joachim
 Scarabello, Luca
+Schaeffer, Jonathan
 Scheingraber, Chris
 Schneider, Felix M.
 Schneider, Simon

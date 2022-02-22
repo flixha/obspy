@@ -8,7 +8,17 @@ course on triggering. Test data used in this tutorial can be downloaded here:
 
 The triggers are implemented as described in [Withers1998]_. Information on
 finding the right trigger parameters for STA/LTA type triggers can be found in
-[Trnkoczy2012]_.
+[Trnkoczy2012]_. The list includes (but not limited to):
+
+* Generally, STA duration must be longer than a few periods (zero-crossings of
+  the main frequency) of a typically expected seismic signal. On the other
+  hand, STA duration must be shorter than the shortest events (trigger on/off,
+  the envelope duration) we expect to capture.
+* STA duration must be longer than the inverse frequency of noisy spikes.
+  Otherwise, false alarms will be captured.
+* The LTA window should be longer than a few 'periods' of typically irregular
+  (slow) seismic noise fluctuations. Typically, it's an order of magnitude
+  larger than the STA duration.
 
 .. seealso::
     Please note the convenience method of ObsPy's
@@ -395,6 +405,31 @@ For :func:`~obspy.signal.trigger.ar_pick`, input and output are in seconds.
 
 This gives the output 30.6350002289 and 31.2800006866, meaning that a P pick at
 30.64s and an S pick at 31.28s were identified.
+
+
+AIC - Akaike Information Criterion by Maeda (1985)
+==================================================
+
+Credits: mbagagli
+
+The :func:`~obspy.signal.trigger.aic_simple` function estimates the Akaike
+Information directly from data (see [Maeda1985]_).
+
+    >>> from obspy.core import read, UTCDateTime
+    >>> from obspy.signal.trigger import aic_simple
+    >>> trace = read("https://examples.obspy.org/ev0_6.a01.gse2")[0]
+    >>> df = trace.stats.sampling_rate
+    >>> trace_s = trace.slice(UTCDateTime('1970-01-01T01:00:31.6'),
+    ...                       UTCDateTime('1970-01-01T01:00:34.3'))
+    >>> aic_f = aic_simple(trace_s.data)
+    >>> p_idx = aic_f.argmin()
+    >>> print(p_idx / df)
+    1.62
+    >>> print(UTCDateTime('1970-01-01T01:00:31.6') + (p_idx / df))
+    1970-01-01T01:00:33.220000Z
+
+This yields the output of 4.225 seconds from the sliced trace start time.
+In UTC time this results in 1970-01-01T01:00:33.22.
 
 ----------------
 Advanced Example

@@ -4,15 +4,20 @@ The obspy.clients.seedlink.slclient test suite.
 """
 import unittest
 
+import pytest
+
 from obspy import UTCDateTime
 from obspy.clients.seedlink.slclient import SLClient
+
+
+pytestmark = pytest.mark.network
 
 
 class SLClientTestCase(unittest.TestCase):
 
     @unittest.skipIf(__name__ != '__main__', 'test must be started manually')
     def test_info(self):
-        sl_client = SLClient(loglevel='DEBUG')
+        sl_client = SLClient()
         sl_client.slconn.set_sl_address("geofon.gfz-potsdam.de:18000")
         sl_client.infolevel = "ID"
         sl_client.verbose = 2

@@ -27,11 +27,6 @@ from ..slpacket import SLPacket
 # default logger
 logger = logging.getLogger('obspy.clients.seedlink')
 
-# set to True for debugging to stdout
-if False:
-    import sys
-    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-
 
 class SeedLinkConnection(object):
     """
@@ -1031,7 +1026,7 @@ class SeedLinkConnection(object):
 
         :raise SeedLinkException: on error or no response or bad response from
             server.
-        :raise IOException: if an I/O error occurs.
+        :raise IOError: if an I/O error occurs.
         """
         timeout = 4.0
 
@@ -1154,7 +1149,7 @@ class SeedLinkConnection(object):
         :return: the response bytes or null if no response requested.
 
         :raise SeedLinkException: on error or no or bad response from server.
-        :raise IOException: if an I/O error occurs.
+        :raise IOError: if an I/O error occurs.
 
         """
         # print("DEBUG: sendbytes:", repr(sendbytes))
@@ -1194,7 +1189,7 @@ class SeedLinkConnection(object):
         :return: the response bytes (zero length if no available data), or null
             if EOF.
 
-        :raise IOException: if an I/O error occurs.
+        :raise IOError: if an I/O error occurs.
         """
         # read up to maxbytes
         try:
@@ -1226,7 +1221,7 @@ class SeedLinkConnection(object):
         if it can not be parsed from the returned string.
 
         :raise SeedLinkException: on error.
-        :raise IOException: if an I/O error occurs.
+        :raise IOError: if an I/O error occurs.
         """
         send_str = b"HELLO"
         logger.debug("sending: %s" % (send_str.decode()))
@@ -1286,7 +1281,7 @@ class SeedLinkConnection(object):
             CONNECTIONS, ALL).
 
         :raise SeedLinkException: on error.
-        :raise IOException: if an I/O error occurs.
+        :raise IOError: if an I/O error occurs.
         """
         if self.check_version(2.92) >= 0:
             bytes_ = b"INFO " + info_level.encode('ascii', 'strict') + b"\r"
@@ -1349,7 +1344,7 @@ class SeedLinkConnection(object):
         :param curstream: the description of the station to negotiate.
 
         :raise SeedLinkException: on error.
-        :raise IOException: if an I/O error occurs.
+        :raise IOError: if an I/O error occurs.
 
         """
 
@@ -1472,7 +1467,7 @@ class SeedLinkConnection(object):
         requested starting at seqnum.
 
         :raise SeedLinkException: on error.
-        :raise IOException: if an I/O error occurs.
+        :raise IOError: if an I/O error occurs.
         """
         # get stream (should be only stream present)
         curstream = None
@@ -1500,7 +1495,7 @@ class SeedLinkConnection(object):
         requested starting at seqnum.
 
         :raise SeedLinkException: on error.
-        :raise IOException: if an I/O error occurs.
+        :raise IOError: if an I/O error occurs.
         """
         acceptsta = 0
         if len(self.streams) < 1:

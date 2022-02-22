@@ -8,9 +8,11 @@
     (https://www.gnu.org/copyleft/lesser.html)
 """
 import collections
-from distutils.version import LooseVersion
 import unittest
 from unittest import mock
+
+from packaging.version import parse as parse_version
+import pytest
 
 import obspy
 from obspy.clients.fdsn.routing.federator_routing_client import \
@@ -18,6 +20,7 @@ from obspy.clients.fdsn.routing.federator_routing_client import \
 
 
 _DummyResponse = collections.namedtuple("_DummyResponse", ["content"])
+pytestmark = pytest.mark.network
 
 
 class FederatorRoutingClientTestCase(unittest.TestCase):
@@ -30,8 +33,8 @@ class FederatorRoutingClientTestCase(unittest.TestCase):
         # At the time of test writing the version is 1.1.1. Here we just
         # make sure it is larger.
         self.assertGreaterEqual(
-            LooseVersion(self.client.get_service_version()),
-            LooseVersion("1.1.1"))
+            parse_version(self.client.get_service_version()),
+            parse_version("1.1.1"))
 
     def test_response_splitting(self):
         data = """

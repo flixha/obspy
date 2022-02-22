@@ -59,6 +59,7 @@ from obspy.core.event import (
     Arrival, Amplitude, FocalMechanism, MomentTensor, NodalPlane, NodalPlanes,
     QuantityError, Tensor, ResourceIdentifier, Comment)
 from obspy.core.event.header import EventType, EventTypeCertainty
+from obspy.core.inventory.util import _resolve_seedid, _add_resolve_seedid_doc
 from obspy.io.nordic import NordicParsingError
 from obspy.io.nordic.utils import (
     _int_conv, _str_conv, _float_conv, _evmagtonor, _nortoevmag,
@@ -151,9 +152,10 @@ def readheader(sfile, encoding='latin-1'):
 def _readheader(head_lines):
     """
     Internal header reader.
+
     :type head_lines: list
-    :param head_lines:
-        List of tuples of (strings, line-number) of the header lines.
+    :param head_lines: List of tuples of (strings, line-number) of the header
+        lines.
 
     :returns: :class:`~obspy.core.event.event.Event`
     """
@@ -218,7 +220,7 @@ def _read_origin(line):
     Read one origin (type 1) line.
 
     :param str line: Origin format (type 1) line
-    :return: `~obspy.core.event.Event`
+    :return: `~obspy.core.event.event.Event`
     """
     new_event = Event()
     try:
@@ -318,7 +320,7 @@ def _read_spectral_info(tagged_lines, event=None):
 
     :type tagged_lines: dict
     :param tagged_lines: dictionary of tagged lines
-    :type event: :class:`~obspy.core.event.Event`
+    :type event: :class:`~obspy.core.event.event.Event`
     :param event: Event to associate spectral info with
 
     :returns:
@@ -403,8 +405,9 @@ def _read_spectral_info(tagged_lines, event=None):
     return spec_inf
 
 
+@_add_resolve_seedid_doc
 def read_nordic(select_file, return_wavnames=False, encoding='latin-1',
-                nordic_format='UKN'):
+                nordic_format='UKN', **kwargs):
     """
     Read a catalog of events from a Nordic formatted select file.
 
@@ -445,14 +448,16 @@ def read_nordic(select_file, return_wavnames=False, encoding='latin-1',
         elif len(event_str) > 0:
             catalog, wav_names = _extract_event(
                 event_str=event_str, catalog=catalog, wav_names=wav_names,
-                return_wavnames=return_wavnames, nordic_format=nordic_format)
+                return_wavnames=return_wavnames, nordic_format=nordic_format,
+                **kwargs)
             event_str = []
     f.close()
     if len(event_str) > 0:
         # May occur if the last line of the file is not blank as it should be
         catalog, wav_names = _extract_event(
             event_str=event_str, catalog=catalog, wav_names=wav_names,
-            return_wavnames=return_wavnames, nordic_format=nordic_format)
+            return_wavnames=return_wavnames, nordic_format=nordic_format,
+            **kwargs)
     if return_wavnames:
         return catalog, wav_names
     for event in catalog:
@@ -461,12 +466,12 @@ def read_nordic(select_file, return_wavnames=False, encoding='latin-1',
 
 
 def _extract_event(event_str, catalog, wav_names, return_wavnames=False,
-                   nordic_format='UKN'):
+                   nordic_format='UKN', **kwargs):
     """
     Helper to extract event info from a list of line strings.
 
     :param event_str: List of lines from sfile
-    :type event_str: list of str
+    :type event_str: list[str]
     :param catalog: Catalog to append the event to
     :type catalog: `obspy.core.event.Catalog`
     :param wav_names: List of waveform names
@@ -493,7 +498,7 @@ def _extract_event(event_str, catalog, wav_names, return_wavnames=False,
     if return_wavnames:
         wav_names.append(_readwavename(tagged_lines=tagged_lines['6']))
     new_event = _read_picks(tagged_lines=tagged_lines, new_event=new_event,
-                            nordic_format=nordic_format)
+                            nordic_format=nordic_format, **kwargs)
     catalog += new_event
     return catalog, wav_names
 
@@ -731,7 +736,7 @@ def _read_comments(tagged_lines, event):
     return event
 
 
-def _read_picks(tagged_lines, new_event, nordic_format='UKN'):
+def _read_picks(tagged_lines, new_event, nordic_format='UKN', **kwargs):
     """
     Internal pick reader. Use read_nordic instead.
 
@@ -763,9 +768,11 @@ def _read_picks(tagged_lines, new_event, nordic_format='UKN'):
         nordic_format, phase_ok = check_nordic_format_version(pickline)
 
     if nordic_format == 'NEW':
-        new_event = _read_picks_nordic_new(pickline, new_event, header, evtime)
+        new_event = _read_picks_nordic_new(pickline, new_event, header, evtime,
+                                           **kwargs)
     elif nordic_format == 'OLD':
-        new_event = _read_picks_nordic_old(pickline, new_event, header, evtime)
+        new_event = _read_picks_nordic_old(pickline, new_event, header, evtime,
+                                           **kwargs)
     elif nordic_format == 'UKN':
         warnings.warn('Cannot check whether Nordic format is Old or New, is '
                       'this really a Nordic file?')
@@ -866,7 +873,7 @@ def check_nordic_format_version(pickline):
     return nordic_format, is_phase
 
 
-def _read_picks_nordic_old(pickline, new_event, header, evtime):
+def _read_picks_nordic_old(pickline, new_event, header, evtime, **kwargs):
     """
     Reads the type 4 line of the old Nordic format.
     """
@@ -916,8 +923,10 @@ def _read_picks_nordic_old(pickline, new_event, header, evtime):
             warnings.warn('%s is not currently supported' % header[57:60])
         finalweight = _int_conv(line[68:70])
         # Create a new obspy.event.Pick class for this pick
-        _waveform_id = WaveformStreamID(station_code=line[1:6].strip(),
-                                        channel_code=line[6:8].strip())
+        widargs = _resolve_seedid(
+            station=line[1:6].strip(), component=line[6:8].strip(), time=time,
+            **kwargs)
+        _waveform_id = WaveformStreamID(*widargs)
         pick = Pick(waveform_id=_waveform_id, phase_hint=phase,
                     polarity=polarity, time=time)
         try:
@@ -996,7 +1005,7 @@ def _read_picks_nordic_old(pickline, new_event, header, evtime):
     return new_event
 
 
-def _read_picks_nordic_new(pickline, new_event, header, evtime):
+def _read_picks_nordic_new(pickline, new_event, header, evtime, **kwargs):
     """
     Reads the type 4 line of the old Nordic format.
     """
@@ -1040,10 +1049,14 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime):
             warnings.warn('%s is not currently supported' % header[60:63])
         finalweight = _int_conv(line[68:70])
         # Create a new obspy.event.Pick class for this pick
-        _waveform_id = WaveformStreamID(station_code=line[1:6].strip(),
-                                        channel_code=line[6:9].strip(),
-                                        network_code=line[10:12].strip(),
-                                        location_code=line[12:14].strip())
+        sta, cha = line[1:6].strip(), line[6:9].strip()
+        net, loc = line[10:12].strip(), line[12:14].strip()
+        if net == '' and loc == '':
+            widargs = _resolve_seedid(station=sta, component=cha, time=time,
+                                      **kwargs)
+        else:
+            widargs = net, sta, loc, cha
+        _waveform_id = WaveformStreamID(*widargs)
         pick = Pick(waveform_id=_waveform_id, phase_hint=phase,
                     polarity=polarity, time=time)
         # agency and operator / author / analyst
@@ -1322,7 +1335,7 @@ def write_select(catalog, filename, userid='OBSP', evtype='L',
     """
     Function to write a catalog to a select file in nordic format.
 
-    :type catalog: :class:`~obspy.core.event.event.Catalog`
+    :type catalog: :class:`~obspy.core.event.catalog.Catalog`
     :param catalog: A catalog of obspy events
     :type filename: str
     :param filename: Path to write to
@@ -1334,7 +1347,7 @@ def write_select(catalog, filename, userid='OBSP', evtype='L',
     :type wavefiles: list
     :param wavefiles:
         Waveforms to associate the events with, must be ordered in the same
-         way as the events in the catalog.
+        way as the events in the catalog.
     :type high_accuracy: bool
     :param high_accuracy:
         Whether to output pick seconds at 6.3f (high_accuracy) or
@@ -1365,7 +1378,8 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
                   wavefiles=None, explosion=False, nordic_format='OLD',
                   overwrite=True, string_io=None, high_accuracy=True):
     """
-    Write an :class:`~obspy.core.event.Event` to a nordic formatted s-file.
+    Write an :class:`~obspy.core.event.event.Event` to a nordic formatted
+    s-file.
 
     :type event: :class:`~obspy.core.event.event.Event`
     :param event: A single obspy event
@@ -2106,7 +2120,7 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
             # Coda, backzimuth (add extra line), amplitude, or other phase pick
             add_amp_line = False
             is_amp_pick = False
-            add_BAZ_line = False
+            add_baz_line = False
             par1 = '       '
             par2 = '      '
             residual = '     '
@@ -2124,7 +2138,7 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                 impulsivity = ''
             # Back Azimuth
             elif azimuth.strip() != '':  # back-azimuth
-                add_BAZ_line = True
+                add_baz_line = True
                 if len(phase_hint) <= 4:  # max total phase name length is 8
                     baz_phase_hint = 'BAZ-' + phase_hint
                 else:
@@ -2217,21 +2231,20 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     distance=distance.rjust(5)[0:5],
                     caz=_str_conv(caz).rjust(3)[0:3]))
             if add_amp_line:
-                for j, amp in enumerate(amp_list):
-                    pick_strings.append(pick_string_formatter.format(
-                        station=pick.waveform_id.station_code,
-                        channel=channel_code, network=network_code,
-                        location=location_code, impulsivity=' ',
-                        phase_hint=amp_phase_hints[j].ljust(8)[0:8],
-                        weight=' ', eval_mode=amp_eval_modes[j],
-                        hour=pick_hour, minute=pick.time.minute,
-                        seconds=_str_conv(pick_seconds, rounded=3).rjust(6),
-                        par1=amp_par1s[j], par2=amp_par2s[j], agency=agency,
-                        author=author, ain='     ', residual=amp_residuals[j],
-                        finalweight=amp_finalweights[j],
-                        distance=distance.rjust(5)[0:5],
-                        caz=_str_conv(caz).rjust(3)[0:3]))
-            if add_BAZ_line:
+                pick_strings.append(pick_string_formatter.format(
+                    station=pick.waveform_id.station_code,
+                    channel=channel_code, network=network_code,
+                    location=location_code, impulsivity=' ',
+                    phase_hint=amp_phase_hint.ljust(8)[0:8], weight=' ',
+                    eval_mode=amp_eval_mode, hour=pick_hour,
+                    minute=pick.time.minute,
+                    seconds=_str_conv(pick_seconds, rounded=3).rjust(6),
+                    par1=amp_par1, par2=amp_par2, agency=agency, author=author,
+                    ain='     ', residual=amp_residual,
+                    finalweight=amp_finalweight,
+                    distance=distance.rjust(5)[0:5],
+                    caz=_str_conv(caz).rjust(3)[0:3]))
+            if add_baz_line:
                 pick_strings.append(pick_string_formatter.format(
                     station=pick.waveform_id.station_code,
                     channel=channel_code, network=network_code,
