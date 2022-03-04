@@ -18,6 +18,7 @@ from math import pi
 import warnings
 
 import numpy as np
+import scipy
 
 from .. import compatibility
 from obspy.core.util.base import ComparingObject
