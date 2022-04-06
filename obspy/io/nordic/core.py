@@ -2263,18 +2263,18 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                 coda_residual = '     '
                 # TODO: weight for coda
             # Back Azimuth
-            if backazimuth.strip() != '':  # back-azimuth
+            elif backazimuth.strip() != '':  # back-azimuth
                 add_baz_line = True
-                # If the BAZ-measurement is an extra pick in addition to the
+                # If the BAZ-measurement is an extra pick in addition to the 
                 # actual phase, then don't duplicate the BAZ-line. Instead,
                 # write the BAZ-pick into a single line.
-                if pick.phase_hint and pick.phase_hint.startswith('BAZ-'):
+                if pick.phase_hint.startswith('BAZ-'):
                     add_baz_line = False
                 if len(phase_hint) <= 4:  # max total phase name length is 8
                     baz_phase_hint = 'BAZ-' + phase_hint
                 else:
                     baz_phase_hint = phase_hint
-                baz_par1 = _str_conv(azimuth, rounded=1).rjust(7)[0:7]
+                baz_par1 = _str_conv(backazimuth, rounded=1).rjust(7)[0:7]
                 baz_par2 = _str_conv(velocity, rounded=2).rjust(6)[0:6]
                 baz_residual = '     '
                 baz_finalweight = '  '
