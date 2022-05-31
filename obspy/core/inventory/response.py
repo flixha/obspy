@@ -348,16 +348,19 @@ class PolesZerosResponseStage(ResponseStage):
         """
         # Has to be imported here for now to avoid circular imports.
         from obspy.signal.invsim import paz_to_freq_resp
+        from obspy.signal.util import next_pow_2
         if len(frequencies) > 10000 and fast:
             resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
                                            10000, dtype=np.float64)
         else:
             resp_frequencies = frequencies
 
+        n_freq = len(resp_frequencies)
+        nfft = next_pow_2(2 * n_freq)
         resp = paz_to_freq_resp(
             poles=np.array(self._poles, dtype=np.complex128),
             zeros=np.array(self._zeros, dtype=np.complex128),
-            scale_fac=self.normalization_factor,
+            scale_fac=self.normalization_factor, nfft=nfft,
             frequencies=resp_frequencies, freq=False) * self.stage_gain
 
         # If required, do interpolation of amplitude and phase of the response
