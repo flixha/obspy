@@ -169,11 +169,22 @@ class TauModel(object):
                 self.iocb_branch = branch_num
                 best_iocb = abs(t_branch.top_depth -
                                 self.s_mod.v_mod.iocb_depth)
+        # check bottom of last layer, zero radius, in case no core for
+        # cmb and iocb
+        t_branch = self.tau_branches[0, -1]
+        if abs(t_branch.bot_depth - self.s_mod.v_mod.cmb_depth) < best_cmb:
+            self.cmb_branch = len(self.tau_branches[0])
+            self.cmb_depth = t_branch.bot_depth
+        if abs(t_branch.bot_depth - self.s_mod.v_mod.iocb_depth) < best_iocb:
+            self.iocb_branch = len(self.tau_branches[0])
+            self.iocb_depth = t_branch.bot_depth
         # Now set moho_depth etc. to the top of the branches we have decided
         # on.
         self.moho_depth = self.tau_branches[0, self.moho_branch].top_depth
-        self.cmb_depth = self.tau_branches[0, self.cmb_branch].top_depth
-        self.iocb_depth = self.tau_branches[0, self.iocb_branch].top_depth
+        if (self.cmb_branch < len(self.tau_branches[0])):
+            self.cmb_depth = self.tau_branches[0, self.cmb_branch].top_depth
+        if (self.iocb_branch < len(self.tau_branches[0])):
+            self.iocb_depth = self.tau_branches[0, self.iocb_branch].top_depth
         self.validate()
 
     def __str__(self):
@@ -539,9 +550,7 @@ class TauModel(object):
         """
         Deserialize model from numpy npz binary file.
         """
-        # XXX: Make this a with statement when old NumPy support is dropped.
-        npz = np.load(filename)
-        try:
+        with np.load(filename) as npz:
             model = TauModel(s_mod=None,
                              radius_of_planet=float(npz["radius_of_planet"]),
                              cache=cache, skip_calc=True)
@@ -617,11 +626,6 @@ class TauModel(object):
             )
             setattr(slowness_model, "v_mod", velocity_model)
             setattr(velocity_model, 'layers', npz['v_mod.layers'])
-        finally:
-            if hasattr(npz, 'close'):
-                npz.close()
-            else:
-                del npz
         return model
 
     @staticmethod

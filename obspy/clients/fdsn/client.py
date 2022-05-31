@@ -19,6 +19,7 @@ import textwrap
 import threading
 import warnings
 from collections import OrderedDict
+from http.client import HTTPException, IncompleteRead
 from urllib.parse import urlparse
 
 from lxml import etree
@@ -59,6 +60,7 @@ class CustomRedirectHandler(urllib_request.HTTPRedirectHandler):
     Custom redirection handler to also do it for POST requests which the
     standard library does not do by default.
     """
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         """
         Copied and modified from the standard library.
@@ -89,6 +91,7 @@ class NoRedirectionHandler(urllib_request.HTTPRedirectHandler):
     """
     Handler that does not direct!
     """
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         """
         Copied and modified from the standard library.
@@ -236,7 +239,6 @@ class Client(object):
                       .format(base_url)
                 raise ValueError(msg)
             url_subpath = URL_DEFAULT_SUBPATH
-
         # Make sure the base_url does not end with a slash.
         base_url = base_url.strip("/")
         # Catch invalid URLs to avoid confusing error messages
@@ -1451,7 +1453,6 @@ class Client(object):
         if "event" in services:
             urls.append(self._build_url("event", "catalogs"))
             urls.append(self._build_url("event", "contributors"))
-
         # Access cache if available.
         url_hash = frozenset(urls)
         if url_hash in self.__service_discovery_cache:
@@ -1502,7 +1503,6 @@ class Client(object):
             thread.start()
         for thread in threads:
             thread.join(15)
-
         self.services = {}
 
         # Collect the redirection exceptions to be able to raise nicer
@@ -1570,7 +1570,6 @@ class Client(object):
                    "be due to a temporary service outage or an invalid FDSN "
                    "service address." % self.base_url)
             raise FDSNNoServiceException(msg)
-
         # Cache.
         if self.debug is True:
             print("Storing discovered services in cache.")
@@ -1817,13 +1816,11 @@ def download_url(url, opener, timeout=10, headers={}, debug=False,
             print("-" * 70)
             print(data.decode())
             print("-" * 70)
-
     try:
         request = urllib_request.Request(url=url, headers=headers)
         # Request gzip encoding if desired.
         if use_gzip:
             request.add_header("Accept-encoding", "gzip")
-
         url_obj = opener.open(request, timeout=timeout, data=data)
     # Catch HTTP errors.
     except urllib_request.HTTPError as e:
@@ -1831,6 +1828,9 @@ def download_url(url, opener, timeout=10, headers={}, debug=False,
             msg = "HTTP error %i, reason %s, while downloading '%s': %s" % \
                   (e.code, str(e.reason), url, e.read())
             print(msg)
+        else:
+            # Without this line we will get unclosed sockets
+            e.read()
         return e.code, e
     except Exception as e:
         if debug is True:
@@ -1845,7 +1845,13 @@ def download_url(url, opener, timeout=10, headers={}, debug=False,
             print("Uncompressing gzipped response for %s" % url)
         # Cannot directly stream to gzip from urllib!
         # http://www.enricozini.org/2011/cazzeggio/python-gzip/
-        buf = io.BytesIO(url_obj.read())
+        try:
+            reader = url_obj.read()
+        except IncompleteRead:
+            msg = 'Problem retrieving data from datacenter. '
+            msg += 'Try reducing size of request.'
+            raise HTTPException(msg)
+        buf = io.BytesIO(reader)
         buf.seek(0, 0)
         f = gzip.GzipFile(fileobj=buf)
     else:

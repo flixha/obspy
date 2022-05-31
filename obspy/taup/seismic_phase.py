@@ -7,6 +7,7 @@ import math
 import re
 
 import numpy as np
+from scipy.optimize import brentq
 
 from obspy.core.util.obspy_types import Enum
 
@@ -16,7 +17,7 @@ from .helper_classes import (Arrival, SlownessModelError, TauModelError,
 from .c_wrappers import clibtau
 
 
-REFINE_DIST_RADIAN_TOL = 0.0049 * math.pi / 180
+REFINE_DIST_RADIAN_TOL = 4.9e-6 * math.pi / 180
 
 
 _ACTIONS = Enum([
@@ -78,7 +79,7 @@ class SeismicPhase(object):
             # the CMB.
             "max_diffraction_in_radians": np.radians(60.0),
             # The maximum number of refinements to make to an Arrival.
-            "max_recursion": 5
+            "max_recursion": 50
         }
 
         # Enables phases originating in core.
@@ -588,6 +589,17 @@ class SeismicPhase(object):
                             current_leg, next_leg))
 
             elif current_leg == "K":
+                # Now deal with K.
+                if tau_model.cmb_depth == tau_model.radius_of_planet:
+                    # degenerate case, CMB is at center, so model
+                    # without a core
+                    self.max_ray_param = -1
+                    return
+                if tau_model.cmb_depth == tau_model.iocb_depth:
+                    # degenerate case, CMB is same as IOCB, so model
+                    # without an outer core
+                    self.max_ray_param = -1
+                    return
                 if next_leg in ("P", "S"):
                     if prev_leg in ("P", "S", "K", "k", "START"):
                         end_action = _ACTIONS["turn"]
@@ -609,6 +621,12 @@ class SeismicPhase(object):
                         tau_model, self.current_branch, tau_model.cmb_branch,
                         is_p_wave, end_action)
                 elif next_leg in ("I", "J"):
+                    # And now consider inner core, I and J.
+                    if tau_model.iocb_depth == tau_model.radius_of_planet:
+                        # degenerate case, IOCB is at center,
+                        # so model without a inner core
+                        self.max_ray_param = -1
+                        return
                     end_action = _ACTIONS["transdown"]
                     self.add_to_branch(
                         tau_model, self.current_branch,
@@ -799,7 +817,7 @@ class SeismicPhase(object):
         if self.name.endswith("kmps"):
             self.dist = np.zeros(2)
             self.time = np.zeros(2)
-            self.ray_param = np.empty(2)
+            self.ray_param = np.empty(2, dtype=np.float64)
 
             self.ray_param[0] = \
                 tau_model.radius_of_planet / float(self.name[:-4])
@@ -817,7 +835,7 @@ class SeismicPhase(object):
 
         if self.max_ray_param < 0 or self.min_ray_param > self.max_ray_param:
             # Phase has no arrivals, possibly due to source depth.
-            self.ray_param = np.empty(0)
+            self.ray_param = np.empty(0, dtype=np.float64)
             self.min_ray_param = -1
             self.max_ray_param = -1
             self.dist = np.empty(0)
@@ -836,17 +854,19 @@ class SeismicPhase(object):
         if self.max_ray_param_index == 0 \
                 and self.min_ray_param_index == len(tau_model.ray_params) - 1:
             # All ray parameters are valid so just copy:
-            self.ray_param = tau_model.ray_param.copy()
+            self.ray_param = tau_model.ray_params.copy()
         elif self.max_ray_param_index == self.min_ray_param_index:
             # if "Sdiff" in self.name or "Pdiff" in self.name:
             # self.ray_param = [self.min_ray_param, self.min_ray_param]
             # elif "Pn" in self.name or "Sn" in self.name:
             # self.ray_param = [self.min_ray_param, self.min_ray_param]
             if self.name.endswith("kmps"):
-                self.ray_param = np.array([0, self.max_ray_param])
+                self.ray_param = np.array([0.0, self.max_ray_param],
+                                          dtype=np.float64)
             else:
                 self.ray_param = np.array([self.min_ray_param,
-                                           self.min_ray_param])
+                                           self.min_ray_param],
+                                          dtype=np.float64)
         else:
             # Only a subset of the ray parameters is valid so use these.
             self.ray_param = \
@@ -1270,6 +1290,10 @@ class SeismicPhase(object):
 
     def refine_arrival(self, degrees, ray_index, dist_radian, tolerance,
                        recursion_limit):
+        """
+        Use a shooting method to improve ray path.
+        """
+
         left = Arrival(self, degrees, self.time[ray_index],
                        self.dist[ray_index], self.ray_param[ray_index],
                        ray_index, self.name, self.purist_name,
@@ -1281,46 +1305,50 @@ class SeismicPhase(object):
                         # (ray_index + 1).
                         ray_index, self.name, self.purist_name,
                         self.source_depth, self.receiver_depth)
-        return self._refine_arrival(degrees, left, right, dist_radian,
-                                    tolerance, recursion_limit)
 
-    def _refine_arrival(self, degrees, left_estimate, right_estimate,
-                        search_dist, tolerance, recursion_limit):
-        new_estimate = self.linear_interp_arrival(degrees, search_dist,
-                                                  left_estimate,
-                                                  right_estimate)
+        new_estimate = self.linear_interp_arrival(degrees, dist_radian,
+                                                  left, right)
+
+        # can't shoot/refine for non-body waves
         if (recursion_limit <= 0 or self.name.endswith('kmps') or
                 any(phase in self.name
                     for phase in ['Pdiff', 'Sdiff', 'Pn', 'Sn'])):
-            # can't shoot/refine for non-body waves
             return new_estimate
 
-        try:
-            shoot = self.shoot_ray(degrees, new_estimate.ray_param)
-            if ((left_estimate.purist_dist - search_dist) *
-                    (search_dist - shoot.purist_dist)) > 0:
-                # search between left and shoot
-                if abs(shoot.purist_dist -
-                       new_estimate.purist_dist) < tolerance:
-                    return self.linear_interp_arrival(degrees, search_dist,
-                                                      left_estimate, shoot)
-                else:
-                    return self._refine_arrival(degrees, left_estimate, shoot,
-                                                search_dist, tolerance,
-                                                recursion_limit - 1)
+        # Find more accurate ray parameter by root-finding
+        new_arrivals = [new_estimate]
+        left_ray_param = self.ray_param[ray_index]
+        right_ray_param = self.ray_param[ray_index + 1]
+        left_dist = self.dist[ray_index]
+        right_dist = self.dist[ray_index + 1]
+
+        def residual(ray_param):
+            if ray_param == left_ray_param:
+                dist = left_dist
+            elif ray_param == right_ray_param:
+                dist = right_dist
             else:
-                # search between shoot and right
-                if abs(shoot.purist_dist -
-                       new_estimate.purist_dist) < tolerance:
-                    return self.linear_interp_arrival(degrees, search_dist,
-                                                      shoot, right_estimate)
-                else:
-                    return self._refine_arrival(degrees, shoot, right_estimate,
-                                                search_dist, tolerance,
-                                                recursion_limit - 1)
-        except (IndexError, LookupError, SlownessModelError) as e:
-            msg = 'Please contact the developers. This error should not occur.'
-            raise RuntimeError(msg) from e
+                shoot = self.shoot_ray(degrees, ray_param)
+                new_arrivals.append(shoot)
+                dist = shoot.purist_dist
+            return dist_radian - dist
+
+        new_ray_param = brentq(residual, left_ray_param, right_ray_param,
+                               xtol=tolerance, maxiter=recursion_limit,
+                               disp=False)
+        new_ray_param = np.float64(new_ray_param)
+
+        # the arrival brentq calculated at its last iteration
+        last = new_arrivals[-1]
+
+        # Use stationarity of the theta function to get better estimate of time
+        # Buland and Chapman (1983), equations (16) and (20)
+        theta = last.time + last.ray_param * (dist_radian - last.purist_dist)
+
+        return Arrival(self, degrees, theta,
+                       dist_radian, new_ray_param,
+                       ray_index, self.name, self.purist_name,
+                       self.source_depth, self.receiver_depth)
 
     def shoot_ray(self, degrees, ray_param):
         if (any(phase in self.name

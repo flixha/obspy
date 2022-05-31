@@ -383,7 +383,8 @@ def paz_to_freq_resp(poles, zeros, scale_fac, t_samp=None, nfft=None,
     :rtype: :class:`numpy.ndarray` complex128
     :return: Frequency response of PAZ of length nfft
     """
-    b, a = scipy.signal.ltisys.zpk2tf(zeros, poles, scale_fac)
+    n = nfft // 2
+    b, a = scipy.signal.zpk2tf(zeros, poles, scale_fac)
     # a has to be a list for the scipy.signal.freqs() call later but zpk2tf()
     # strangely returns it as an integer.
     if not isinstance(a, np.ndarray) and a == 1.0:
