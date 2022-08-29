@@ -15,7 +15,7 @@ This class hierarchy is closely modelled after the de-facto standard format
     The ObsPy Development Team (devs@obspy.org)
 :license:
     GNU Lesser General Public License, Version 3
-    (http://www.gnu.org/copyleft/lesser.html)
+    (https://www.gnu.org/copyleft/lesser.html)
 """
 import copy
 import warnings
@@ -365,7 +365,8 @@ class Catalog(object):
             if key == "magnitude":
                 temp_events = []
                 for event in events:
-                    if (event.magnitudes and event.magnitudes[0].mag and
+                    if (event.magnitudes and
+                        event.magnitudes[0].mag is not None and
                         operator_map[operator](
                             event.magnitudes[0].mag,
                             float(value))):

@@ -29,14 +29,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        build: [cp37, cp38, cp39, cp310]
+        build: [cp39, cp310]
         exclude-flag:
           - ${{ github.ref_name == 'master' && github.event_name == 'push' }}
         exclude:
-          - build: cp37
-            exclude-flag: true
-          - build: cp38
-            exclude-flag: true
           - build: cp39
             exclude-flag: true
     steps:
@@ -58,7 +54,7 @@ jobs:
           echo "CIBW_TEST_COMMAND: $CIBW_TEST_COMMAND"
 
       - name: Build and test wheels
-        uses: pypa/cibuildwheel@v2.4.0
+        uses: pypa/cibuildwheel@v2.8.1
 
       - uses: actions/upload-artifact@v3
         with:
@@ -91,7 +87,7 @@ jobs:
           name: artifact
           path: dist
 
-      - uses: pypa/gh-action-pypi-publish@v1.5.0
+      - uses: pypa/gh-action-pypi-publish@v1.5.1
         with:
           user: __token__
           password: ${{ secrets.TESTPYPI }}
@@ -107,7 +103,7 @@ jobs:
         with:
           name: artifact
           path: dist
-      - uses: pypa/gh-action-pypi-publish@v1.5.0
+      - uses: pypa/gh-action-pypi-publish@v1.5.1
         with:
           user: __token__
           password: ${{ secrets.PYPI }}
