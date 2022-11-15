@@ -7,7 +7,7 @@ This module defines the ResourceIdentifier class and associated code.
     The ObsPy Development Team (devs@obspy.org)
 :license:
     GNU Lesser General Public License, Version 3
-    (http://www.gnu.org/copyleft/lesser.html)
+    (https://www.gnu.org/copyleft/lesser.html)
 """
 import re
 import warnings
@@ -103,7 +103,7 @@ class ResourceIdentifier(object):
         if `id` is not specified (for a fixed ID string). Makes automatically
         generated resource ids more reasonable. By default "smi:local" is used
         which ensures a QuakeML compliant resource identifier.
-    :type referred_object: Python object, optional
+    :type referred_object: object, optional
     :param referred_object: The object (resource) to which this instance
         refers. All instances created with the same resource_id will be able
         to access the object as long as at least one instance actually has a
@@ -151,7 +151,7 @@ class ResourceIdentifier(object):
     >>> # Deleting it, or letting the garbage collector handle the object will
     >>> # invalidate the reference.
     >>> del event
-    >>> print(res_id.get_referred_object())
+    >>> print(res_id.get_referred_object())  # doctest: +SKIP
     None
 
     The most powerful ability (and reason why one would want to use a resource
@@ -198,37 +198,9 @@ class ResourceIdentifier(object):
     >>> assert ref_a.get_referred_object() is obj_a
     >>> assert ref_b.get_referred_object() is obj_b
     >>> del obj_b  # obj_b gets garbage collected
-    >>> assert ref_b.get_referred_object() is obj_a
+    >>> assert ref_b.get_referred_object() is obj_a  # doctest: +SKIP
     >>> del obj_a  # now no object with res_id exists
-    >>> assert ref_b.get_referred_object() is None
-
-    The id can be converted to a valid QuakeML ResourceIdentifier by calling
-    the convert_id_to_quakeml_uri() method. The resulting id will be of the
-    form::
-        smi:authority_id/prefix/id
-
-    >>> res_id = ResourceIdentifier(prefix='origin')
-    >>> res_id.convert_id_to_quakeml_uri(authority_id="obspy.org")
-    >>> res_id  # doctest: +ELLIPSIS
-    ResourceIdentifier(id="smi:obspy.org/origin/...")
-    >>> res_id = ResourceIdentifier(id='foo')
-    >>> res_id.convert_id_to_quakeml_uri()
-    >>> res_id
-    ResourceIdentifier(id="smi:local/foo")
-    >>> # A good way to create a QuakeML compatibly ResourceIdentifier from
-    >>> # scratch is
-    >>> res_id = ResourceIdentifier(prefix='pick')
-    >>> res_id.convert_id_to_quakeml_uri(authority_id='obspy.org')
-    >>> res_id  # doctest: +ELLIPSIS
-    ResourceIdentifier(id="smi:obspy.org/pick/...")
-    >>> # If the given ID is already a valid QuakeML
-    >>> # ResourceIdentifier, nothing will happen.
-    >>> res_id = ResourceIdentifier('smi:test.org/subdir/id')
-    >>> res_id
-    ResourceIdentifier(id="smi:test.org/subdir/id")
-    >>> res_id.convert_id_to_quakeml_uri()
-    >>> res_id
-    ResourceIdentifier(id="smi:test.org/subdir/id")
+    >>> assert ref_b.get_referred_object() is None  # doctest: +SKIP
 
     ResourceIdentifiers are considered identical if the IDs are
     the same.
@@ -506,7 +478,7 @@ class ResourceIdentifier(object):
     @deprecated()
     def get_quakeml_uri(self, authority_id="local"):
         """
-        This method is deprecated, use :meth:`get_quakeml_uri_str` instead.
+        This method is deprecated, use :meth:`.get_quakeml_uri_str` instead.
         """
         return self.get_quakeml_uri_str(authority_id=authority_id)
 

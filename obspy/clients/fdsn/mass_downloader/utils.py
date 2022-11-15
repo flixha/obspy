@@ -12,6 +12,7 @@ import collections
 import fnmatch
 import itertools
 import os
+from http.client import HTTPException
 from socket import timeout as socket_timeout
 from urllib.error import HTTPError, URLError
 
@@ -28,7 +29,8 @@ from obspy.io.mseed.util import get_record_information
 
 # Different types of errors that can happen when downloading data via the
 # FDSN clients.
-ERRORS = (FDSNException, HTTPError, URLError, socket_timeout, ConnectionError)
+ERRORS = (ConnectionError, FDSNException, HTTPError, HTTPException, URLError,
+          socket_timeout, )
 
 # mean earth radius in meter as defined by the International Union of
 # Geodesy and Geophysics. Used for the spherical kd-tree.
@@ -283,7 +285,7 @@ class SphericalNearestNeighbour(object):
     @staticmethod
     def spherical2cartesian(data):
         """
-        Converts a list of :class:`~obspy.fdsn.download_status.Station`
+        Converts a list of :class:`~obspy.clients.fdsn.download_status.Station`
         objects to an array of shape(len(list), 3) containing x/y/z in meters.
         """
         # Create three arrays containing lat/lng/radius.
@@ -439,14 +441,14 @@ def get_stationxml_filename(str_or_fct, network, station, channels,
     Helper function getting the filename of a StationXML file.
 
     :param str_or_fct: The string or function to be evaluated.
-    :type str_or_fct: function or str
+    :type str_or_fct: callable or str
     :param network: The network code.
     :type network: str
     :param station: The station code.
     :type station: str
     :param channels: The channels. Each channel is a tuple of two strings:
         location code and channel code.
-    :type channels: list of tuples
+    :type channels: list[tuple]
     :param starttime: The start time.
     :type starttime: :class:`~obspy.core.utcdatetime.UTCDateTime`
     :param endtime: The end time.

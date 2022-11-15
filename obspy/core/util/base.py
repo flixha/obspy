@@ -8,7 +8,6 @@ Base utilities and constants for ObsPy.
     GNU Lesser General Public License, Version 3
     (https://www.gnu.org/copyleft/lesser.html)
 """
-import doctest
 import glob
 import importlib
 import inspect
@@ -25,14 +24,13 @@ from pathlib import PurePath
 
 import numpy as np
 import pkg_resources
-import requests
 from pkg_resources import get_entry_info, iter_entry_points
 
 from obspy.core.util.misc import to_int_or_zero, buffered_load_entry_point
 
 
 # defining ObsPy modules currently used by runtests and the path function
-DEFAULT_MODULES = ['clients.filesystem', 'core', 'db', 'geodetics', 'imaging',
+DEFAULT_MODULES = ['clients.filesystem', 'core', 'geodetics', 'imaging',
                    'io.ah', 'io.arclink', 'io.ascii', 'io.cmtsolution',
                    'io.cnv', 'io.css', 'io.dmx', 'io.focmec', 'io.hypodd',
                    'io.iaspei', 'io.gcf', 'io.gse2', 'io.json',
@@ -43,9 +41,9 @@ DEFAULT_MODULES = ['clients.filesystem', 'core', 'db', 'geodetics', 'imaging',
                    'io.seiscomp', 'io.stationtxt', 'io.stationxml', 'io.wav',
                    'io.win', 'io.xseed', 'io.y', 'io.zmap', 'realtime',
                    'scripts', 'signal', 'taup']
-NETWORK_MODULES = ['clients.arclink', 'clients.earthworm', 'clients.fdsn',
+NETWORK_MODULES = ['clients.earthworm', 'clients.fdsn',
                    'clients.iris', 'clients.neic', 'clients.nrl',
-                   'clients.seedlink', 'clients.seishub', 'clients.syngine']
+                   'clients.seedlink', 'clients.syngine']
 ALL_MODULES = DEFAULT_MODULES + NETWORK_MODULES
 
 # default order of automatic format detection
@@ -61,6 +59,15 @@ WAVEFORM_ACCEPT_BYTEORDER = ['MSEED', 'Q', 'SAC', 'SEGY', 'SU']
 
 _sys_is_le = sys.byteorder == 'little'
 NATIVE_BYTEORDER = _sys_is_le and '<' or '>'
+
+# Define Obspy hard and soft dependencies
+HARD_DEPENDENCIES = [
+    "future", "numpy", "scipy", "matplotlib", "lxml.etree", "setuptools",
+    "sqlalchemy", "decorator", "requests"]
+OPTIONAL_DEPENDENCIES = [
+    "flake8", "pyimgur", "pyproj", "pep8-naming", "m2crypto", "shapefile",
+    "mock", "pyflakes", "geographiclib", "cartopy"]
+DEPENDENCIES = HARD_DEPENDENCIES + OPTIONAL_DEPENDENCIES
 
 
 class NamedTemporaryFile(io.BufferedIOBase):
@@ -352,52 +359,9 @@ def get_dependency_version(package_name, raw_string=False):
     return version_list
 
 
-def get_proj_version(raw_string=False):
-    """
-    Get the version number for proj4 as a list.
-
-    proj4 >= 5 does not play nicely for pseudocyl projections
-    (see basemap issue 433).  Checking this will allow us to raise a warning
-    when plotting using basemap.
-
-    :returns: Package version as a list of three integers. Empty list if pyproj
-        not installed.
-        With option ``raw_string=True`` returns raw version string instead.
-        The last version number can indicate different things like it being a
-        version from the old svn trunk, the latest git repo, some release
-        candidate version, ...
-        If the last number cannot be converted to an integer it will be set to
-        0.
-    """
-    try:
-        from pyproj import Proj
-    except ImportError:
-        return []
-
-    # proj4 is a c library, prproj wraps this.  proj_version is an attribute
-    # of the Proj class that is only set when the projection is made. Make
-    # a dummy projection and get the version
-    _proj = Proj(proj='utm', zone=10, ellps='WGS84')
-    if hasattr(_proj, 'proj_version'):
-        version_string = str(getattr(_proj, 'proj_version'))
-    else:
-        from pyproj import proj_version_str
-        version_string = proj_version_str
-
-    if raw_string:
-        return version_string
-    version_list = [to_int_or_zero(no) for no in version_string.split(".")]
-    # For version 5.2.0 the version number is given as 5.2
-    while len(version_list) < 3:
-        version_list.append(0)
-    return version_list
-
-
 NUMPY_VERSION = get_dependency_version('numpy')
 SCIPY_VERSION = get_dependency_version('scipy')
 MATPLOTLIB_VERSION = get_dependency_version('matplotlib')
-BASEMAP_VERSION = get_dependency_version('basemap')
-PROJ4_VERSION = get_proj_version()
 CARTOPY_VERSION = get_dependency_version('cartopy')
 
 
@@ -548,7 +512,7 @@ def _add_format_plugin_table(func, group, method, numspaces=4):
     """
     A function to populate the docstring of func with its plugin table.
     """
-    if '%s' in func.__doc__:
+    if func.__doc__ is not None and '%s' in func.__doc__:
         func.__doc__ = func.__doc__ % make_format_plugin_table(
             group, method, numspaces=numspaces)
 
@@ -622,6 +586,7 @@ def download_to_file(url, filename_or_buffer, chunk_size=1024):
     :param chunk_size: The chunk size in bytes.
     :type chunk_size: int
     """
+    import requests
     # Workaround for old request versions.
     try:
         r = requests.get(url, stream=True)
@@ -699,7 +664,7 @@ def _generic_reader(pathname_or_url=None, callback_func=None,
 class CatchAndAssertWarnings(warnings.catch_warnings):
     def __init__(self, clear=None, expected=None, show_all=True, **kwargs):
         """
-        :type clear: list of str
+        :type clear: list[str]
         :param clear: list of modules to clear warning
             registries on (e.g. ``["obspy.signal", "obspy.core"]``), in order
             to make sure any expected warnings will be shown and not suppressed
@@ -778,4 +743,5 @@ class CatchAndAssertWarnings(warnings.catch_warnings):
 
 
 if __name__ == '__main__':
+    import doctest
     doctest.testmod(exclude_empty=True)

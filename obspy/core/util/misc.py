@@ -28,10 +28,10 @@ WIN32 = sys.platform.startswith('win32')
 
 # The following dictionary maps the first character of the channel_id to the
 # lowest sampling rate this so called Band Code should be used for according
-# to: SEED MANUAL p.124
-# We use this e.g. in seishub.client.getWaveform to request two samples more on
-# both start and end to cut to the samples that really are nearest to requested
-# start/end time afterwards.
+# to SEED MANUAL p.124
+# It can e.g. be used to request additional samples on both start and end to
+# cut to the samples that really are nearest to requested start/end time
+# afterwards.
 BAND_CODE = {'F': 1000.0,
              'G': 1000.0,
              'D': 250.0,
@@ -47,7 +47,8 @@ BAND_CODE = {'F': 1000.0,
              'R': 0.0001,
              'P': 0.000001,
              'T': 0.0000001,
-             'Q': 0.00000001}
+             'Q': 0.00000001
+             }
 
 # Dict that stores results from load entry points
 _ENTRY_POINT_CACHE = {}
@@ -117,7 +118,7 @@ def score_at_percentile(values, per, limit=(), issorted=True):
     >>> score_at_percentile(a, 75, limit=(0, 100))
     42.5
 
-    This function is taken from :func:`scipy.stats.score_at_percentile`.
+    This function is taken from `scipy.stats.score_at_percentile`.
 
     Copyright (c) Gary Strangman
     """
@@ -200,39 +201,6 @@ def to_int_or_zero(value):
         return int(value)
     except ValueError:
         return 0
-
-
-# import numpy loadtxt and check if ndmin parameter is available
-try:
-    from numpy import loadtxt
-    loadtxt(np.array([0]), ndmin=1)
-except TypeError:
-    # otherwise redefine loadtxt
-    def loadtxt(*args, **kwargs):
-        """
-        Replacement for older numpy.loadtxt versions not supporting ndmin
-        parameter.
-        """
-        if 'ndmin' not in kwargs:
-            return np.loadtxt(*args, **kwargs)
-        # ok we got a ndmin param
-        if kwargs['ndmin'] != 1:
-            # for now we support only one dimensional arrays
-            raise NotImplementedError('Upgrade your NumPy version!')
-        del kwargs['ndmin']
-        dtype = kwargs.get('dtype', None)
-        # lets get the data
-        try:
-            data = np.loadtxt(*args, **kwargs)
-        except IOError as e:
-            # raises in older versions if no data could be read
-            if 'reached before encountering data' in str(e):
-                # return empty array
-                return np.array([], dtype=dtype)
-            # otherwise just raise
-            raise
-        # ensures that an array is returned
-        return np.atleast_1d(data)
 
 
 def get_untracked_files_from_git():
@@ -735,27 +703,6 @@ def _yield_resource_id_parent_attr(obj):
                         yield out
 
     return func(obj)
-
-
-def _seed_id_map(
-        inventory=None, user_id_map=None, key='{sta.code}',
-        seed_factory='{net.code}.{{}}.{cha.location_code}.{cha.code:.2}{{}}'):
-    """
-    Return mapping between station code and seed id expressions
-    """
-    id_map = {}
-    if inventory is not None:
-        msg = 'Multiple seed ids found for station {}. Use first.'
-        for net in inventory:
-            for sta in net:
-                for cha in sta:
-                    k = key.format(net=net, sta=sta, cha=cha)
-                    v = seed_factory.format(net=net, sta=sta, cha=cha)
-                    if id_map.setdefault(k, v) != v:
-                        warnings.warn(msg.format(k))
-    if user_id_map is not None:
-        id_map.update(user_id_map)
-    return id_map
 
 
 if __name__ == '__main__':

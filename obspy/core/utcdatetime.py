@@ -13,15 +13,13 @@ import calendar
 import math
 import operator
 import re
+import sys
 import time
 import warnings
 
 import numpy as np
 from obspy.core.util.deprecation_helpers import ObsPyDeprecationWarning
 
-# Regular expression used in the init function of the UTCDateTime objects which
-# is called a lot. Thus pre-compile it.
-_YEAR0REGEX = re.compile(r"^(\d{1,3}[-/,])(.*)$")
 
 # based on https://www.myintervals.com/blog/2009/05/20/iso-8601, w/ week 53 fix
 _ISO8601_REGEX = re.compile(r"""
@@ -31,7 +29,7 @@ _ISO8601_REGEX = re.compile(r"""
      ((0[1-9]|1[0-2])
       (\3([12]\d|0[1-9]|3[01]))?
       |W([0-4]\d|5[0-3])(-?[1-7])?
-      |(00[1-9]|0[1-9]\d|[12]\d{2}|3([0-5]\d|6[1-6]))
+      |(00[1-9]|0[1-9]\d|[12]\d{2}|3([0-5]\d|6[0-6]))
      )
      ([T\s]
       ((([01]\d|2[0-3])((:?)[0-5]\d)?|24\:?00)([\.,]\d+(?!:))?)?
@@ -41,20 +39,11 @@ _ISO8601_REGEX = re.compile(r"""
     )?
     $
     """, re.VERBOSE)
+# Regular expression used in the init function of the UTCDateTime objects which
+# is called a lot. Thus pre-compile it.
+_YEAR0REGEX = re.compile(r"^(\d{1,3}[-/,])(.*)$")
 
 TIMESTAMP0 = datetime.datetime(1970, 1, 1, 0, 0)
-# XXX the strftime problem seems to be specific to Python < 3.2
-# XXX so this can be removed after dropping Python 2 support
-STRFTIME_MAPPING = (
-    ('%Y', '04d', 'year', None),
-    ('%m', '02d', 'month', None),
-    ('%d', '02d', 'day', None),
-    ('%H', '02d', 'hour', None),
-    ('%M', '02d', 'minute', None),
-    ('%S', '02d', 'second', None),
-    ('%f', '06d', 'microsecond', None),
-    ('%y', '02d', 'year', lambda x: x % 100),
-    )
 
 # common attributes
 YMDHMS = ('year', 'month', 'day', 'hour', 'minute', 'second')
@@ -152,6 +141,9 @@ class UTCDateTime(object):
 
             >>> UTCDateTime("2009001", iso8601=True)       # enforce ISO8601
             UTCDateTime(2009, 1, 1, 0, 0)
+
+            >>> UTCDateTime("2009360T")                    # compact no time
+            UTCDateTime(2009, 12, 26, 0, 0)
 
         * Week date representation.
 
@@ -1281,49 +1273,13 @@ class UTCDateTime(object):
         """
         # This is an attempt to get consistent behavior across platforms.
         # See https://bugs.python.org/issue32195
-        # Only ever do anything if there's a real need
-        if self.year < 1000:
-            try:
-                try:
-                    # replace '%Y' depending on results of previous check if
-                    # possible
-                    if not self.__class__._strftime_four_digit_year_works:
-                        format = format.replace("%Y", "%04Y")
-                except AttributeError:
-                    # this is the first time running into a potentially
-                    # problematic call, so check if something needs to be done
-                    # once now
-                    check = self.__class__(900, 1, 1).datetime.strftime('%Y')
-                    self.__class__._strftime_four_digit_year_works = (
-                        len(check) == 4)
-                    # now delegate again
-                    return self.strftime(format)
-            # just a safety net to not break UTCDateTime.strftime if some
-            # unforeseen problems with the above approach appear
-            except Exception:
-                pass
-
+        # and https://bugs.python.org/issue13305
+        # This is an issue of glibc implementation differing across platforms,
+        # out of control of Python, but we still try to be consistent across
+        # all platforms
+        if sys.platform.startswith("linux"):
+            format = format.replace("%Y", "%04Y")
         return self.datetime.strftime(format)
-
-    def _strftime_replacement(self, strftime_string):
-        """
-        Replace all simple, year-independent strftime commands
-
-        >>> t = UTCDateTime(1813, 10, 30, 12, 34, 56, 789012)
-        >>> print(t._strftime_replacement('"%Y-%m-%dT%H:%M:%S.%f %y"'))
-        "1813-10-30T12:34:56.789012 13"
-        """
-        for strftime_key, format_spec, property_name, func in STRFTIME_MAPPING:
-            if strftime_key not in strftime_string:
-                continue
-            strftime_string = strftime_string.replace(
-                strftime_key, '{%s:%s}' % (property_name, format_spec))
-            replacement = getattr(self, property_name)
-            if func is not None:
-                replacement = func(replacement)
-            strftime_string = strftime_string.format(
-                **{property_name: replacement})
-        return strftime_string
 
     @staticmethod
     def strptime(date_string, format):
@@ -1419,7 +1375,7 @@ class UTCDateTime(object):
         """
         Returns a tuple containing (ISO year, ISO week number, ISO weekday).
 
-        :rtype: tuple of ints
+        :rtype: tuple(int)
         :return: Returns a (named) tuple containing ISO year, ISO week number
             and ISO weekday. Depending on the used Python version it either
             returns a tuple (Py<3.9) or named tuple (Py>=3.9).
@@ -1509,7 +1465,7 @@ class UTCDateTime(object):
         :type compact: bool, optional
         :param compact: Delivers a compact SEED date string if enabled. Default
             value is set to False.
-        :rtype: string
+        :rtype: str
         :return: Datetime string in the SEED format.
 
         .. rubric:: Example

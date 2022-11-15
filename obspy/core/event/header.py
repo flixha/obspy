@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-obspy.core.event.header - Enumeration types for event-type classes
-==================================================================
+
 This module provides enumerations defined in the
 `QuakeML <https://quake.ethz.ch/quakeml/>`_ standard.
 
@@ -9,7 +8,7 @@ This module provides enumerations defined in the
     The ObsPy Development Team (devs@obspy.org)
 :license:
     GNU Lesser General Public License, Version 3
-    (http://www.gnu.org/copyleft/lesser.html)
+    (https://www.gnu.org/copyleft/lesser.html)
 """
 from obspy.core.util import Enum
 

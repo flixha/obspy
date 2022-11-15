@@ -21,7 +21,7 @@ from obspy.core.util.obspy_types import (ObsPyException, ZeroSamplingRate,
 from obspy.geodetics import inside_geobounds
 
 from .util import (BaseNode, Equipment, Operator, Distance, Latitude,
-                   Longitude, _unified_content_strings, _textwrap, Site)
+                   Longitude, Site, _unified_content_strings_expanded)
 
 
 class Station(BaseNode):
@@ -94,10 +94,11 @@ class Station(BaseNode):
         :type historical_code: str
         :param historical_code: A previously used code if different from the
             current code.
-        :type data_availability: :class:`~obspy.station.util.DataAvailability`
+        :type data_availability:
+            :class:`~obspy.core.inventory.util.DataAvailability`
         :param data_availability: Information about time series availability
             for the station.
-        :type identifiers: list of str, optional
+        :type identifiers: list[str], optional
         :param identifiers: Persistent identifiers for network/station/channel
             (schema version >=1.1). URIs are in general composed of a 'scheme'
             and a 'path' (optionally with additional components), the two of
@@ -163,7 +164,7 @@ class Station(BaseNode):
                "\tChannel Count: {selected}/{total} (Selected/Total)\n"
                "\t{start_date} - {end_date}\n"
                "\tAccess: {restricted} {alternate_code}{historical_code}\n"
-               "\tLatitude: {lat:.2f}, Longitude: {lng:.2f}, "
+               "\tLatitude: {lat:.4f}, Longitude: {lng:.4f}, "
                "Elevation: {elevation:.1f} m\n")
         ret = ret.format(
             station_name=contents["stations"][0],
@@ -179,10 +180,8 @@ class Station(BaseNode):
             historical_code="historical Code: %s " % self.historical_code if
             self.historical_code else "")
         ret += "\tAvailable Channels:\n"
-        ret += "\n".join(_textwrap(
-            ", ".join(_unified_content_strings(contents["channels"])),
-            initial_indent="\t\t", subsequent_indent="\t\t",
-            expand_tabs=False))
+        for ele in _unified_content_strings_expanded(self.channels):
+            ret += "\t%s\n" % ele
         return ret
 
     def _repr_pretty_(self, p, cycle):
@@ -375,9 +374,10 @@ class Station(BaseNode):
             Channel Count: None/None (Selected/Total)
             2006-12-16T00:00:00.000000Z -
             Access: None
-            Latitude: 48.16, Longitude: 11.28, Elevation: 565.0 m
+            Latitude: 48.1629, Longitude: 11.2752, Elevation: 565.0 m
             Available Channels:
-                FUR..BHZ, FUR..LHZ
+             ..BHZ        20.0 Hz  2006-12-16 to None
+             ..LHZ         1.0 Hz  2006-12-16 to None
 
         The `location` and `channel` selection criteria  may also contain UNIX
         style wildcards (e.g. ``*``, ``?``, ...; see

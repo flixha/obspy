@@ -33,7 +33,7 @@ from obspy import Stream, Trace, UTCDateTime, __version__
 from obspy.core import Stats
 from obspy.imaging.scripts.scan import compress_start_end
 from obspy.core.inventory import Inventory
-from obspy.core.util import AttribDict, NUMPY_VERSION
+from obspy.core.util import AttribDict
 from obspy.core.util.base import MATPLOTLIB_VERSION
 from obspy.core.util.obspy_types import ObsPyException
 from obspy.imaging.cm import obspy_sequential
@@ -327,7 +327,7 @@ class PPSD(object):
           :func:`~obspy.core.inventory.inventory.read_inventory` or fetched
           from a :mod:`FDSN <obspy.clients.fdsn>` webservice).
         * Providing an
-          :class:`obspy.io.xseed Parser <obspy.io.xseed.parser.Parser>`,
+          :class:`obspy.io.xseed.parser.Parser`,
           (e.g. containing metadata from a Dataless SEED file).
         * Providing the filename/path to a local RESP file.
         * Providing a dictionary containing poles and zeros information. Be
@@ -347,7 +347,7 @@ class PPSD(object):
         :type stats: :class:`~obspy.core.trace.Stats`
         :param stats: Stats of the station/instrument to process
         :type metadata: :class:`~obspy.core.inventory.inventory.Inventory` or
-            :class:`~obspy.io.xseed Parser` or str or dict
+            :class:`~obspy.io.xseed.parser.Parser` or str or dict
         :param metadata: Response information of instrument. See above notes
             for details.
         :type skip_on_gaps: bool, optional
@@ -358,7 +358,7 @@ class PPSD(object):
                 `skip_on_gaps=True` for not filling gaps with zeros which might
                 result in some data segments shorter than `ppsd_length` not
                 used in the PPSD.
-        :type db_bins: tuple of three ints/floats
+        :type db_bins: tuple(int, int, int) or tuple(float, float, float)
         :param db_bins: Specify the lower and upper boundary and the width of
                 the db bins. The bin width might get adjusted to fit  a number
                 of equally spaced bins in between the given boundaries.
@@ -388,7 +388,7 @@ class PPSD(object):
         :param period_step_octaves: Step length on frequency axis in fraction
             of octaves (default of ``0.125`` means one smoothed psd value on
             the frequency axis is measured every 1/8 of an octave).
-        :type period_limits: tuple/list of two float
+        :type period_limits: tuple or list[float, float]
         :param period_limits: Set custom lower and upper end of period range
             (e.g. ``(0.01, 100)``). The specified lower end of period range
             will be set as the central period of the first bin (geometric mean
@@ -701,9 +701,11 @@ class PPSD(object):
         Inserts the given UTCDateTime and processed/octave-binned spectrum at
         the right position in the lists, keeping the order intact.
 
-        Replaces old :meth:`PPSD.__insert_used_time()` private method and the
-        addition ot the histogram stack that was performed directly in
-        :meth:`PPSD.__process()`.
+        Replaces old
+        `obspy.signal.spectral_estimation.PPSD.__insert_used_time()`
+        private method and the addition ot the histogram stack that was
+        performed directly in
+        :meth:`obspy.signal.spectral_estimation.PPSD.__process()`.
 
         :type utcdatetime: :class:`~obspy.core.utcdatetime.UTCDateTime`
         :type spectrum: :class:`numpy.ndarray`
@@ -876,6 +878,12 @@ class PPSD(object):
                 continue
             t1 = tr.stats.starttime
             t2 = tr.stats.endtime
+            if t1 + self.ppsd_length - tr.stats.delta > t2:
+                msg = (f"Trace is shorter than this PPSD's 'ppsd_length' "
+                       f"({str(self.ppsd_length)} seconds). Skipping trace: "
+                       f"{str(tr)}")
+                warnings.warn(msg)
+                continue
             while t1 + self.ppsd_length - tr.stats.delta <= t2:
                 if self.__check_time_present(t1):
                     msg = "Already covered time spans detected (e.g. %s), " + \
@@ -1042,7 +1050,7 @@ class PPSD(object):
             stack.
         """
         times_all = np.array(self._times_processed)
-        selected = np.ones(len(times_all), dtype=np.bool)
+        selected = np.ones(len(times_all), dtype=bool)
         if starttime is not None:
             selected &= times_all > starttime._ns
         if endtime is not None:
@@ -1053,10 +1061,10 @@ class PPSD(object):
             # windows, so we start with an array of False and set all matching
             # pieces True for the final logical AND against the previous
             # restrictions
-            selected_time_of_weekday = np.zeros(len(times_all), dtype=np.bool)
+            selected_time_of_weekday = np.zeros(len(times_all), dtype=bool)
             for weekday, start, end in time_of_weekday:
                 if weekday == -1:
-                    selected_ = np.ones(len(times_all), dtype=np.bool)
+                    selected_ = np.ones(len(times_all), dtype=bool)
                 else:
                     selected_ = (
                         times_all_details['iso_weekday'] == weekday)
@@ -1122,7 +1130,7 @@ class PPSD(object):
         :type endtime: :class:`~obspy.core.utcdatetime.UTCDateTime`
         :param endtime: If set, data after the specified time is excluded
             from the returned stack.
-        :type time_of_weekday: list of (int, float, float) 3-tuples
+        :type time_of_weekday: list(int, float, float)
         :param time_of_weekday: If set, restricts the data that is included
             in the stack by time of day and weekday. Monday is `1`, Sunday is
             `7`, `-1` for any day of week. For example, using
@@ -1140,23 +1148,23 @@ class PPSD(object):
             has to be taken into consideration (e.g. with a `ppsd_length` of
             one hour and a `time_of_weekday` restriction to 10pm-2am
             actually includes data from 10pm-3am).
-        :type year: list of int
+        :type year: list[int]
         :param year: If set, restricts the data that is included in the stack
             by year. For example, using `year=[2015]` only individual spectra
             from year 2015 are used in the stack, using `year=[2013, 2015]`
             only spectra from exactly year 2013 or exactly year 2015 are used.
-        :type month: list of int
+        :type month: list[int]
         :param month: If set, restricts the data that is included in the stack
             by month of year. For example, using `month=[2]` only individual
             spectra from February are used in the stack, using `month=[4, 7]`
             only spectra from exactly April or exactly July are used.
-        :type isoweek: list of int
+        :type isoweek: list[int]
         :param isoweek: If set, restricts the data that is included in the
             stack by ISO week number of year. For example, using `isoweek=[2]`
             only individual spectra from 2nd ISO week of any year are used in
             the stack, using `isoweek=[4, 7]` only spectra from exactly 4th ISO
             week or exactly 7th ISO week are used.
-        :type callback: func
+        :type callback: callable
         :param callback: Custom user defined callback function that can be used
             for more complex scenarios to specify whether an individual psd
             piece should be included in the stack or not. The function will be
@@ -1383,7 +1391,7 @@ class PPSD(object):
 
         Load previously computed PPSD results from a
         compressed numpy binary in npz format, written with
-        :meth:`~PPSD.write_npz`.
+        :meth:`~obspy.signal.spectral_estimation.PPSD.save_npz`.
         If more data are to be added and processed, metadata have to be
         specified again during loading because they are not
         stored in the npz format.
@@ -1391,7 +1399,7 @@ class PPSD(object):
         :type filename: str
         :param filename: Name of numpy .npz file with stored PPSD data
         :type metadata: :class:`~obspy.core.inventory.inventory.Inventory` or
-            :class:`~obspy.io.xseed Parser` or str or dict
+            :class:`~obspy.io.xseed.parser.Parser` or str or dict
         :param metadata: Response information of instrument. See notes in
             :meth:`PPSD.__init__` for details.
         :type allow_pickle: bool
@@ -1440,21 +1448,14 @@ class PPSD(object):
             ppsd.ppsd_version = PPSD._CURRENT_VERSION
             return ppsd
 
-        # XXX get rid of if/else again when bumping minimal numpy to 1.7
-        if NUMPY_VERSION >= [1, 7]:
-            # XXX get rid of if/else again when bumping minimal numpy to 1.10
-            if NUMPY_VERSION >= [1, 10]:
-                kwargs = {'allow_pickle': allow_pickle}
-            else:
-                kwargs = {}
-            with np.load(filename, **kwargs) as data:
+        try:
+            with np.load(filename, allow_pickle=allow_pickle) as data:
                 return _load(data)
-        else:
-            data = np.load(filename)
-            try:
-                return _load(data)
-            finally:
-                data.close()
+        except ValueError:
+            msg = ("Loading PPSD results saved with ObsPy versions < "
+                   "1.2 requires setting the allow_pickle parameter "
+                   "of PPSD.load_npz to True")
+            raise ValueError(msg)
 
     def add_npz(self, filename, allow_pickle=False):
         """
@@ -1462,8 +1463,8 @@ class PPSD(object):
 
         Load previously computed PPSD results from a
         compressed numpy binary in npz format, written with
-        :meth:`~PPSD.write_npz` and add the information to the current PPSD
-        instance.
+        :meth:`obspy.signal.spectral_estimation.PPSD.save_npz` and add the
+        information to the current PPSD instance.
         Before adding the data it is checked if the data was computed with the
         same settings, then any time periods that are not yet covered are added
         to the current PPSD (a warning is emitted if any segments are omitted).
@@ -1541,27 +1542,14 @@ class PPSD(object):
                 msg = msg % (duplicates, len(_times_processed), filename)
                 warnings.warn(msg)
 
-        # XXX get rid of if/else again when bumping minimal numpy to 1.7
-        if NUMPY_VERSION >= [1, 7]:
-            # XXX get rid of if/else again when bumping minimal numpy to 1.10
-            if NUMPY_VERSION >= [1, 10]:
-                kwargs = {'allow_pickle': allow_pickle}
-            else:
-                kwargs = {}
-            try:
-                with np.load(filename, **kwargs) as data:
-                    _add(data)
-            except ValueError:
-                msg = ("Loading PPSD results saved with ObsPy versions < "
-                       "1.2 requires setting the allow_pickle parameter "
-                       "of PPSD.load_npz to True (needs numpy>=1.10).")
-                raise ValueError(msg)
-        else:
-            data = np.load(filename)
-            try:
+        try:
+            with np.load(filename, allow_pickle=allow_pickle) as data:
                 _add(data)
-            finally:
-                data.close()
+        except ValueError:
+            msg = ("Loading PPSD results saved with ObsPy versions < "
+                   "1.2 requires setting the allow_pickle parameter "
+                   "of PPSD.load_npz to True")
+            raise ValueError(msg)
 
     def _split_lists(self, times, psds):
         """
@@ -1687,7 +1675,7 @@ class PPSD(object):
 
         :type period: float
         :param period: Period to extract PSD values for in seconds.
-        :rtype: four-tuple of (list, float, float, float)
+        :rtype: tuple(list, float, float, float)
         :returns: PSD values for requested period (at times)
         """
         # evaluate which period bin to extract
@@ -1715,12 +1703,12 @@ class PPSD(object):
         .. note::
             For example plots see the :ref:`Obspy Gallery <gallery>`.
 
-        :type period: float (or list thereof)
+        :type period: float or list(float)
         :param period: Period of PSD values to plot. The period bin with the
             central period that is closest to the specified value is selected.
             Multiple values can be specified in a list (``color`` option should
             then also be a list of color specifications, or left ``None``).
-        :type color: matplotlib color specification (or list thereof)
+        :type color: valid matplotlib color or list(valid matplotlib color)
         :param color: Color specification understood by :mod:`matplotlib` (or a
             list thereof in case of multiple periods to plot). ``None`` for
             default colors.
@@ -1857,7 +1845,7 @@ class PPSD(object):
         :param show_histogram: Enable/disable plotting of histogram. This
                 can be set ``False`` e.g. to make a plot with only percentiles
                 plotted. Defaults to ``True``.
-        :type percentiles: list of ints
+        :type percentiles: list[int]
         :param percentiles: percentiles to show if plotting of percentiles is
                 selected.
         :type show_noise_models: bool, optional
@@ -1883,7 +1871,7 @@ class PPSD(object):
         :param max_percentage: Maximum percentage to adjust the colormap. The
             default is 30% unless ``cumulative=True``, in which case this value
             is ignored.
-        :type period_lim: tuple of 2 floats, optional
+        :type period_lim: tuple(float, float), optional
         :param period_lim: Period limits to show in histogram. When setting
             ``xaxis_frequency=True``, this is expected to be frequency range in
             Hz.
@@ -1893,7 +1881,7 @@ class PPSD(object):
         :param show_mean: Enable/disable plotting of mean psd values.
         :type cmap: :class:`matplotlib.colors.Colormap`
         :param cmap: Colormap to use for the plot. To use the color map like in
-            PQLX, [McNamara2004]_ use :const:`obspy.imaging.cm.pqlx`.
+            PQLX, [McNamara2004]_ use :class:`obspy.imaging.cm.pqlx`.
         :type cumulative: bool
         :param cumulative: Can be set to `True` to show a cumulative
             representation of the histogram, i.e. showing color coded for each
@@ -2037,12 +2025,12 @@ class PPSD(object):
 
             self._plot_histogram(fig=fig)
 
-        ax.semilogx()
         if xaxis_frequency:
             ax.set_xlabel('Frequency [Hz]')
             ax.invert_xaxis()
         else:
             ax.set_xlabel('Period [s]')
+        ax.set_xscale('log')
         ax.set_xlim(period_lim)
         ax.set_ylim(self.db_bin_edges[0], self.db_bin_edges[-1])
         if self.special_handling is None:
@@ -2075,7 +2063,7 @@ class PPSD(object):
 
     def _plot_histogram(self, fig, draw=False, filename=None):
         """
-        Reuse a previously created figure returned by :meth:`plot(show=False)`
+        Reuse a previously created figure returned by `plot(show=False)`
         and plot the current histogram stack (pre-computed using
         :meth:`calculate_histogram()`) into the figure. If a filename is
         provided, the figure will be saved to a local file.
@@ -2087,7 +2075,7 @@ class PPSD(object):
         ax = fig.axes[0]
         xlim = ax.get_xlim()
         if "quadmesh" in fig.ppsd:
-            ax.collections.remove(fig.ppsd.pop("quadmesh"))
+            fig.ppsd.pop("quadmesh").remove()
 
         if fig.ppsd.cumulative:
             data = self.current_histogram_cumulative * 100.0
@@ -2122,8 +2110,8 @@ class PPSD(object):
                 color = {"color": "0.7"}
             else:
                 color = {}
-            ax.grid(b=True, which="major", **color)
-            ax.grid(b=True, which="minor", **color)
+            ax.grid(True, which="major", **color)
+            ax.grid(True, which="minor", **color)
 
         ax.set_xlim(*xlim)
 

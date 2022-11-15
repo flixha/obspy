@@ -73,7 +73,7 @@ EVENT_TYPE_AND_CERTAINTY_MAPPING_TO_SEISAN = {
 
 # List of currently implemented line-endings, which in Nordic mark what format
 # info in that line will be.
-ACCEPTED_TAGS = ('1', '6', '7', 'E', ' ', 'F', 'M', '3', 'H')
+ACCEPTED_TAGS = ('1', '6', '7', 'E', ' ', 'F', 'M', '3', 'H', 'I')
 
 ACCEPTED_1CHAR_PHASE_TAGS = ['P', 'p', 'S', 's', 'L', 'G', 'R', 'H', 'T', 'x',
                              'r', 't', 'E']
@@ -203,6 +203,7 @@ def _evmagtonor(mag_type):
     mag = MAG_MAPPING.get(mag_type, '')
     if mag == '':
         warnings.warn(mag_type + ' is not convertible')
+        return ' '
     return mag
 
 
@@ -255,7 +256,6 @@ def _nordic_iasp_phase_ok(phase):
     """
     Function to check whether a phase-string is a valid IASPEI-compatible
     phase in Seisan.
-
     :param phase: Phase string to check
 
     :returns: bool, whether phase string is valid in Seisan.

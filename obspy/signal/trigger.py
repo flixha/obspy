@@ -83,28 +83,24 @@ def recursive_sta_lta_py(a, nsta, nlta):
 
     .. seealso:: [Withers1998]_ (p. 98) and [Trnkoczy2012]_
     """
-    try:
-        a = a.tolist()
-    except Exception:
-        pass
     ndat = len(a)
     # compute the short time average (STA) and long time average (LTA)
     # given by Evans and Allen
     csta = 1. / nsta
     clta = 1. / nlta
     sta = 0.
-    lta = 1e-99  # avoid zero division
-    charfct = [0.0] * len(a)
+    lta = np.finfo(0.0).tiny  # avoid zero division
+    a = np.square(a)
+    charfct = np.zeros(ndat, dtype=np.float64)
     icsta = 1 - csta
     iclta = 1 - clta
     for i in range(1, ndat):
-        sq = a[i] ** 2
-        sta = csta * sq + icsta * sta
-        lta = clta * sq + iclta * lta
+        sta = csta * a[i] + icsta * sta
+        lta = clta * a[i] + iclta * lta
         charfct[i] = sta / lta
-        if i < nlta:
-            charfct[i] = 0.
-    return np.array(charfct)
+    charfct[:nlta] = 0
+
+    return charfct
 
 
 def carl_sta_trig(a, nsta, nlta, ratio, quiet):
@@ -216,10 +212,7 @@ def classic_sta_lta_py(a, nsta, nlta):
     """
     # The cumulative sum can be exploited to calculate a moving average (the
     # cumsum function is quite efficient)
-    sta = np.cumsum(a ** 2)
-
-    # Convert to float
-    sta = np.require(sta, dtype=np.float)
+    sta = np.cumsum(a ** 2, dtype=np.float64)
 
     # Copy for LTA
     lta = sta.copy()
@@ -279,14 +272,12 @@ def z_detect(a, nsta):
 
     .. seealso:: [Withers1998]_, p. 99
     """
-    m = len(a)
-    #
     # Z-detector given by Swindell and Snell (1977)
-    sta = np.zeros(len(a), dtype=np.float64)
-    # Standard Sta
-    pad_sta = np.zeros(nsta)
-    for i in range(nsta):  # window size to smooth over
-        sta = sta + np.concatenate((pad_sta, a[i:m - nsta + i] ** 2))
+    # Standard Sta shifted by 1
+    sta = np.cumsum(a ** 2, dtype=np.float64)
+    sta[nsta + 1:] = sta[nsta:-1] - sta[:-nsta - 1]
+    sta[nsta] = sta[nsta - 1]
+    sta[:nsta] = 0
     a_mean = np.mean(sta)
     a_std = np.std(sta)
     _z = (sta - a_mean) / a_std
@@ -357,6 +348,10 @@ def trigger_onset(charfct, thres1, thres2, max_len=9e99, max_len_delete=False):
     else:
         # include it
         of.extend([ind2[-1]])
+
+    # add last sample to ensure trigger gets switched off if ctf does not fall
+    # below off-threshold before hitting the end
+    of.append(len(charfct))
     #
     pick = []
     while on[-1] > of[0]:
@@ -394,6 +389,7 @@ def pk_baer(reltrc, samp_int, tdownmax, tupevent, thr1, thr2, preset_len,
     :return: (pptime, pfm [,cf]) pptime sample number of parrival;
         pfm direction of first motion (U or D), optionally also the
         characteristic function.
+
     .. note:: currently the first sample is not taken into account
 
     .. seealso:: [Baer1987]_
@@ -421,6 +417,36 @@ def pk_baer(reltrc, samp_int, tdownmax, tupevent, thr1, thr2, preset_len,
         return pptime.value + 1, pfm.value.decode('utf-8'), cf_arr
     else:
         return pptime.value + 1, pfm.value.decode('utf-8')
+
+
+def aic_simple(a):
+    r"""
+    Simple Akaike Information Criterion [Maeda1985]_.
+
+    It's computed directly from input data :math:`a` and defined as
+
+    .. math::
+        \text{AIC}(k) = k\log(\text{Var}(a_{1..k})) +
+                        (N-k-1)\log(\text{Var}(a_{k+1..N}))
+
+    which variance denoted as :math:`\text{Var}`.
+
+    The true output is one data sample less. To make it convenient with other
+    metrics in this module, where the output length is preserved, the last
+    element is appended to the output: ``aic[-2] == aic[-1]``.
+
+    :type a: :class:`numpy.ndarray` or :class:`list`
+    :param a: Input time series
+    :rtype: :class:`numpy.ndarray`
+    :return: aic - Akaike Information Criterion array
+    """
+    n = len(a)
+    if n <= 2:
+        return np.zeros(n, dtype=np.float64)
+    a = np.ascontiguousarray(a, np.float64)
+    aic_res = np.empty(n, dtype=np.float64)
+    clibsignal.aic_simple(aic_res, a, n)
+    return aic_res
 
 
 def ar_pick(a, b, c, samp_rate, f1, f2, lta_p, sta_p, lta_s, sta_s, m_p, m_s,
@@ -663,23 +689,23 @@ def coincidence_trigger(trigger_type, thr_on, thr_off, stream,
     :rtype: list
     :returns: List of event triggers sorted chronologically.
     """
-    st = stream.copy()
     # if no trace ids are specified use all traces ids found in stream
     if trace_ids is None:
-        trace_ids = [tr.id for tr in st]
+        trace_ids = [tr.id for tr in stream]
     # we always work with a dictionary with trace ids and their weights later
     if isinstance(trace_ids, list) or isinstance(trace_ids, tuple):
         trace_ids = dict.fromkeys(trace_ids, 1)
     # set up similarity thresholds as a dictionary if necessary
     if not isinstance(similarity_threshold, dict):
-        similarity_threshold = dict.fromkeys([tr.stats.station for tr in st],
-                                             similarity_threshold)
+        similarity_threshold = dict.fromkeys(
+            [tr.stats.station for tr in stream], similarity_threshold)
 
     # the single station triggering
     triggers = []
     # prepare kwargs for trigger_onset
     kwargs = {'max_len_delete': delete_long_trigger}
-    for tr in st:
+    for tr in stream:
+        tr = tr.copy()
         if tr.id not in trace_ids:
             msg = "At least one trace's ID was not found in the " + \
                   "trace ID list and was disregarded (%s)" % tr.id
@@ -703,12 +729,22 @@ def coincidence_trigger(trigger_type, thr_on, thr_off, stream,
                              cft_std))
     triggers.sort()
 
+    for i, (on, off, tr_id, cft_peak, cft_std) in enumerate(triggers):
+        sta = tr_id.split(".")[1]
+        templates = event_templates.get(sta)
+        if templates:
+            simil = templates_max_similarity(
+                stream, UTCDateTime(on), templates)
+        else:
+            simil = None
+        triggers[i] = (on, off, tr_id, cft_peak, cft_std, simil)
+
     # the coincidence triggering and coincidence sum computation
     coincidence_triggers = []
     last_off_time = 0.0
     while triggers != []:
         # remove first trigger from list and look for overlaps
-        on, off, tr_id, cft_peak, cft_std = triggers.pop(0)
+        on, off, tr_id, cft_peak, cft_std, simil = triggers.pop(0)
         sta = tr_id.split(".")[1]
         event = {}
         event['time'] = UTCDateTime(on)
@@ -721,13 +757,11 @@ def coincidence_trigger(trigger_type, thr_on, thr_off, stream,
             event['cft_stds'] = [cft_std]
         # evaluate maximum similarity for station if event templates were
         # provided
-        templates = event_templates.get(sta)
-        if templates:
-            event['similarity'][sta] = \
-                templates_max_similarity(stream, event['time'], templates)
+        if simil is not None:
+            event['similarity'][sta] = simil
         # compile the list of stations that overlap with the current trigger
-        for trigger in triggers:
-            tmp_on, tmp_off, tmp_tr_id, tmp_cft_peak, tmp_cft_std = trigger
+        for (tmp_on, tmp_off, tmp_tr_id, tmp_cft_peak, tmp_cft_std,
+                tmp_simil) in triggers:
             tmp_sta = tmp_tr_id.split(".")[1]
             # skip retriggering of already present station in current
             # coincidence trigger
@@ -748,10 +782,8 @@ def coincidence_trigger(trigger_type, thr_on, thr_off, stream,
             off = max(off, tmp_off)
             # evaluate maximum similarity for station if event templates were
             # provided
-            templates = event_templates.get(tmp_sta)
-            if templates:
-                event['similarity'][tmp_sta] = \
-                    templates_max_similarity(stream, event['time'], templates)
+            if tmp_simil is not None:
+                event['similarity'][tmp_sta] = tmp_simil
         # skip if both coincidence sum and similarity thresholds are not met
         if event['coincidence_sum'] < thr_coincidence_sum:
             if not event['similarity']:

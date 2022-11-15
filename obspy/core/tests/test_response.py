@@ -11,40 +11,254 @@ Test suite for the response handling.
 """
 import inspect
 import os
-import unittest
 import warnings
 from math import pi
 
 import numpy as np
+import pytest
 import scipy.interpolate
-from matplotlib import rcParams
 
 from obspy import UTCDateTime, read_inventory
 from obspy.core.inventory.response import (
-    _pitick2latex,
-    PolesZerosResponseStage, PolynomialResponseStage)
-from obspy.core.util import MATPLOTLIB_VERSION
+    _pitick2latex, PolesZerosResponseStage, PolynomialResponseStage, Response,
+    ResponseListResponseStage, ResponseListElement, InstrumentSensitivity)
+from obspy.core.util import CatchAndAssertWarnings
 from obspy.core.util.misc import CatchOutput
 from obspy.core.util.obspy_types import ComplexWithUncertainties
-from obspy.core.util.testing import ImageComparison
+from obspy.core.util.testing import WarningsCapture
 from obspy.signal.invsim import evalresp
 from obspy.io.xseed import Parser
 
 
-class ResponseTestCase(unittest.TestCase):
+@pytest.mark.usefixtures('ignore_numpy_errors')
+class TestResponse:
     """
     Tests the for :class:`~obspy.core.inventory.response.Response` class.
     """
-    def setUp(self):
-        # Most generic way to get the actual data directory.
-        self.data_dir = os.path.join(os.path.dirname(os.path.abspath(
-            inspect.getfile(inspect.currentframe()))), "data")
-        self.image_dir = os.path.join(os.path.dirname(__file__), 'images')
-        self.nperr = np.geterr()
-        np.seterr(all='ignore')
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(
+               inspect.getfile(inspect.currentframe()))), "data")
 
-    def tearDown(self):
-        np.seterr(**self.nperr)
+    def test_get_response(self):
+        unit = "VEL"
+        filename = "IRIS_single_channel_with_response"
+
+        xml_filename = os.path.join(self.data_dir,
+                                    filename + os.path.extsep + "xml")
+        inv = read_inventory(xml_filename)
+        resp = inv[0][0][0].response
+
+        freqs = np.logspace(-2, 2, 1000)
+
+        # PAZ stage.
+        xml_resp = resp.get_evalresp_response_for_frequencies(
+            frequencies=freqs, output=unit,
+            start_stage=1,
+            end_stage=1)
+        new_resp = resp.get_response(
+            frequencies=freqs, output=unit,
+            start_stage=1,
+            end_stage=1)
+        np.testing.assert_allclose(xml_resp.real, new_resp.real, rtol=1E-6)
+        np.testing.assert_allclose(xml_resp.imag, new_resp.imag, rtol=1E-6)
+
+        # Decimation stage.
+        xml_resp = resp.get_evalresp_response_for_frequencies(
+            frequencies=freqs, output=unit,
+            start_stage=2,
+            end_stage=2)
+        new_resp = resp.get_response(
+            frequencies=freqs, output=unit,
+            start_stage=2,
+            end_stage=2)
+        np.testing.assert_allclose(xml_resp.real, new_resp.real, rtol=1E-6)
+        np.testing.assert_allclose(xml_resp.imag, new_resp.imag, rtol=1E-6)
+
+        # Coefficients stage.
+        xml_resp = resp.get_evalresp_response_for_frequencies(
+            frequencies=freqs, output=unit,
+            start_stage=3,
+            end_stage=3)
+        new_resp = resp.get_response(
+            frequencies=freqs, output=unit,
+            start_stage=3,
+            end_stage=3)
+        # Amplitude if fully identical everywhere.
+        np.testing.assert_allclose(np.abs(xml_resp), np.abs(new_resp))
+        # Phase starts to differ slightly before Nyquist and quite a bit
+        # after. Evalresp appears to have some Gibb's artifacts and
+        # scipy's solution does look better.
+        np.testing.assert_allclose(
+            np.unwrap(np.angle(xml_resp))[:800],
+            np.unwrap(np.angle(new_resp))[:800],
+            rtol=1E-2, atol=2E-2)
+
+        # Full response.
+        xml_resp = resp.get_evalresp_response_for_frequencies(
+            frequencies=freqs, output=unit)
+        new_resp = resp.get_response(
+            frequencies=freqs, output=unit)
+
+        np.testing.assert_allclose(np.abs(xml_resp),
+                                   np.abs(new_resp), rtol=1E-5)
+        # Phase starts to differ slightly before Nyquist and quite a bit
+        # after. Evalresp appears to have some Gibb's artifacts and
+        # scipy's solution does look better.
+        np.testing.assert_allclose(
+            np.unwrap(np.angle(xml_resp))[:800],
+            np.unwrap(np.angle(new_resp))[:800],
+            rtol=1E-2, atol=2E-2)
+
+    def test_get_response_regression(self):
+        units = ["DISP", "VEL", "ACC"]
+        filenames = ["AU.MEEK", "IRIS_single_channel_with_response",
+                     "XM.05", "IU_ANMO_00_BHZ"]
+
+        for filename in filenames:
+            xml_filename = os.path.join(self.data_dir,
+                                        filename + os.path.extsep + "xml")
+            inv = read_inventory(xml_filename)
+            resp = inv[0][0][0].response
+
+            freqs = np.logspace(-2, 2, 1000)
+
+            for unit in units:
+                # Full response.
+                evrs_resp = resp.get_evalresp_response_for_frequencies(
+                    frequencies=freqs, output=unit)
+                new_resp = resp.get_response(
+                    frequencies=freqs, output=unit)
+
+                np.testing.assert_allclose(np.abs(evrs_resp),
+                                           np.abs(new_resp), rtol=1E-5)
+                # Phase starts to differ slightly before Nyquist and quite a
+                # bit after. Evalresp appears to have some Gibb's artifacts
+                # and scipy's solution does look better.
+                np.testing.assert_allclose(
+                    np.unwrap(np.angle(evrs_resp))[:800],
+                    np.unwrap(np.angle(new_resp))[:800],
+                    rtol=1E-2, atol=2E-2)
+            print("passed:", xml_filename)
+
+    def test_get_response_per_stage(self):
+        filenames = ["AU.MEEK", "IU_ANMO_00_BHZ",
+                     "IRIS_single_channel_with_response", "XM.05"]
+        units = ["DISP", "VEL", "ACC"]
+
+        for filename in filenames:
+            xml_filename = os.path.join(self.data_dir,
+                                        filename + os.path.extsep + "xml")
+            inv = read_inventory(xml_filename)
+            resp = inv[0][0][0].response
+            freqs = np.logspace(-2, 2, 1000)
+            print(xml_filename)
+            for unit in units:
+                for x in range(1, len(resp.response_stages)+1):
+                    print("Type of stage ", str(x) +
+                          ":", type(resp.response_stages[x-1]))
+                    xml_resp = resp.get_evalresp_response_for_frequencies(
+                        frequencies=freqs, start_stage=x,
+                        end_stage=x, output=unit)
+                    new_resp = resp.get_response(
+                        frequencies=freqs, start_stage=x,
+                        end_stage=x, output=unit)
+
+                    np.testing.assert_allclose(np.abs(xml_resp),
+                                               np.abs(new_resp), rtol=1E-5)
+                    # Phase starts to differ slightly before
+                    # Nyquist and quite a bit after. Evalresp
+                    # appears to have some Gibb's artifacts and scipy's
+                    # solution does look better.
+                    np.testing.assert_allclose(
+                        np.unwrap(np.angle(xml_resp))[:800],
+                        np.unwrap(np.angle(new_resp))[:800],
+                        rtol=1E-2, atol=2E-2)
+
+                    print("Succeeded with case for stage no.", x,
+                          "with units", unit)
+
+    def test_get_response_per_stage(self):
+        filenames = ["IRIS_single_channel_with_response", "XM.05", "IU_ANMO_00_BHZ", "AU.MEEK"]
+        units = ["DISP", "VEL", "ACC"]
+
+        for filename in filenames:
+            xml_filename = os.path.join(self.data_dir,
+                                        filename + os.path.extsep + "xml")
+            inv = read_inventory(xml_filename)
+            resp = inv[0][0][0].response
+            freqs = np.logspace(-2, 2, 1000)
+            print(xml_filename)
+            for unit in units:
+                for x in range(1, len(resp.response_stages)+1):
+                    print("Type of stage ", str(x) +
+                          ":", type(resp.response_stages[x-1]))
+                    xml_resp = resp.get_evalresp_response_for_frequencies(
+                        frequencies=freqs, start_stage=x,
+                        end_stage=x, output=unit)
+                    new_resp = resp.get_response(
+                        frequencies=freqs, start_stage=x,
+                        end_stage=x, output=unit)
+
+                    np.testing.assert_allclose(np.abs(xml_resp),
+                                               np.abs(new_resp), rtol=1E-5)
+                    # Phase starts to differ slightly before
+                    # Nyquist and quite a bit after. Evalresp
+                    # appears to have some Gibb's artifacts and scipy's
+                    # solution does look better.
+                    np.testing.assert_allclose(
+                        np.unwrap(np.angle(xml_resp))[:800],
+                        np.unwrap(np.angle(new_resp))[:800],
+                        rtol=1E-2, atol=2E-2)
+
+                    print("Succeeded with case for stage no.", x,
+                          "with units", unit)
+
+    def test_get_response_disp_vel_acc(self):
+        units = ["DISP", "VEL", "ACC"]
+        filename = "IRIS_single_channel_with_response"
+
+        xml_filename = os.path.join(self.data_dir,
+                                    filename + os.path.extsep + "xml")
+        inv = read_inventory(xml_filename)
+        resp = inv[0][0][0].response
+
+        freqs = np.logspace(-2, 2, 1000)
+
+        for unit in units:
+            # Full response.
+            evrs_resp = resp.get_evalresp_response_for_frequencies(
+                frequencies=freqs, output=unit)
+            new_resp = resp.get_response(
+                frequencies=freqs, output=unit)
+
+            np.testing.assert_allclose(np.abs(evrs_resp),
+                                       np.abs(new_resp), rtol=1E-5)
+            # Phase starts to differ slightly before Nyquist and quite a bit
+            # after. Evalresp appears to have some Gibb's artifacts and
+            # scipy's solution does look better.
+            np.testing.assert_allclose(
+                np.unwrap(np.angle(evrs_resp))[:800],
+                np.unwrap(np.angle(new_resp))[:800],
+                rtol=1E-2, atol=2E-2)
+
+            # import matplotlib.pyplot as plt
+            # plt.subplot(411)
+            # plt.semilogx(freqs, np.abs(evrs_resp), label="evalresp")
+            # plt.semilogx(freqs, np.abs(new_resp), label="scipy")
+            # plt.legend(loc=3)
+            # plt.subplot(412)
+            # plt.semilogx(freqs, np.abs(new_resp) - np.abs(evrs_resp))
+            # plt.subplot(413)
+            #
+            # new_phase = np.angle(new_resp)
+            # evrs_phase = np.angle(evrs_resp)
+            #
+            # plt.semilogx(freqs, evrs_phase, label="evalresp")
+            # plt.semilogx(freqs, new_phase, label="scipy")
+            # plt.legend(loc=3)
+            # plt.xlim(1E-2, 20.0)
+            # plt.subplot(414)
+            # plt.semilogx(freqs, evrs_phase - new_phase)
+            # plt.show()
 
     def test_get_response(self):
         unit = "VEL"
@@ -283,9 +497,8 @@ class ResponseTestCase(unittest.TestCase):
                     inv[0][0][0].response.get_evalresp_response(t_samp, nfft,
                                                                 output=unit)
 
-                self.assertTrue(np.allclose(seed_freq, xml_freq, rtol=1E-5))
-                self.assertTrue(np.allclose(seed_response, xml_response,
-                                            rtol=1E-5))
+                assert np.allclose(seed_freq, xml_freq, rtol=1E-5)
+                assert np.allclose(seed_response, xml_response, rtol=1E-5)
 
                 # also test getting response for a set of discrete frequencies
                 indices = (-2, 0, -1, 1, 2, 20, -30, -100)
@@ -323,43 +536,35 @@ class ResponseTestCase(unittest.TestCase):
                                stage.normalization_factor, delta=1E6)
 
     def test_pitick2latex(self):
-        self.assertEqual(_pitick2latex(3 * pi / 2), r'$\frac{3\pi}{2}$')
-        self.assertEqual(_pitick2latex(2 * pi / 2), r'$\pi$')
-        self.assertEqual(_pitick2latex(1 * pi / 2), r'$\frac{\pi}{2}$')
-        self.assertEqual(_pitick2latex(0 * pi / 2), r'$0$')
-        self.assertEqual(_pitick2latex(-1 * pi / 2), r'$-\frac{\pi}{2}$')
-        self.assertEqual(_pitick2latex(-2 * pi / 2), r'$-\pi$')
-        self.assertEqual(_pitick2latex(0.5), r'0.500')
-        self.assertEqual(_pitick2latex(3 * pi + 0.01), r'9.43')
-        self.assertEqual(_pitick2latex(30 * pi + 0.01), r'94.3')
-        self.assertEqual(_pitick2latex(300 * pi + 0.01), r'942.')
-        self.assertEqual(_pitick2latex(3000 * pi + 0.01), r'9.42e+03')
+        assert _pitick2latex(3 * pi / 2) == r'$\frac{3\pi}{2}$'
+        assert _pitick2latex(2 * pi / 2) == r'$\pi$'
+        assert _pitick2latex(1 * pi / 2) == r'$\frac{\pi}{2}$'
+        assert _pitick2latex(0 * pi / 2) == r'$0$'
+        assert _pitick2latex(-1 * pi / 2) == r'$-\frac{\pi}{2}$'
+        assert _pitick2latex(-2 * pi / 2) == r'$-\pi$'
+        assert _pitick2latex(0.5) == r'0.500'
+        assert _pitick2latex(3 * pi + 0.01) == r'9.43'
+        assert _pitick2latex(30 * pi + 0.01) == r'94.3'
+        assert _pitick2latex(300 * pi + 0.01) == r'942.'
+        assert _pitick2latex(3000 * pi + 0.01) == r'9.42e+03'
 
-    def test_response_plot(self):
+    def test_response_plot(self, image_path):
         """
         Tests the response plot.
         """
         resp = read_inventory()[0][0][0].response
-        with warnings.catch_warnings(record=True):
-            warnings.simplefilter("ignore")
-            with ImageComparison(self.image_dir,
-                                 "response_response.png") as ic:
-                rcParams['savefig.dpi'] = 72
-                resp.plot(0.001, output="VEL", start_stage=1, end_stage=3,
-                          outfile=ic.name)
+        with WarningsCapture():
+            resp.plot(0.001, output="VEL", start_stage=1, end_stage=3,
+                      outfile=image_path)
 
-    def test_response_plot_degrees(self):
+    def test_response_plot_degrees(self, image_path):
         """
         Tests the response plot in degrees.
         """
         resp = read_inventory()[0][0][0].response
-        with warnings.catch_warnings(record=True):
-            warnings.simplefilter("ignore")
-            with ImageComparison(self.image_dir,
-                                 "response_response_degrees.png") as ic:
-                rcParams['savefig.dpi'] = 72
-                resp.plot(0.001, output="VEL", start_stage=1, end_stage=3,
-                          plot_degrees=True, outfile=ic.name)
+        with WarningsCapture():
+            resp.plot(0.001, output="VEL", start_stage=1, end_stage=3,
+                      plot_degrees=True, outfile=image_path)
 
     def test_segfault_after_error_handling(self):
         """
@@ -381,10 +586,10 @@ class ResponseTestCase(unittest.TestCase):
         t_samp = 0.05
         nfft = 256
 
+        resp = inv[0][0][0].response
         with CatchOutput():
-            self.assertRaises(ValueError,
-                              inv[0][0][0].response.get_evalresp_response,
-                              t_samp, nfft, output="DISP")
+            with pytest.raises(ValueError):
+                resp.get_evalresp_response(t_samp, nfft, output="DISP")
 
     def test_custom_types_init(self):
         """
@@ -411,9 +616,10 @@ class ResponseTestCase(unittest.TestCase):
         t_samp = 1.0 / sampling_rate
         nfft = 100
 
-        cpx_response, freq = inv[0][0][0].response.get_evalresp_response(
-            t_samp=t_samp, nfft=nfft, output="VEL", start_stage=None,
-            end_stage=None)
+        with WarningsCapture():
+            cpx_response, freq = inv[0][0][0].response.get_evalresp_response(
+                t_samp=t_samp, nfft=nfft, output="VEL", start_stage=None,
+                end_stage=None)
 
         # Cut of the zero frequency.
         cpx_response = cpx_response[1:]
@@ -439,30 +645,6 @@ class ResponseTestCase(unittest.TestCase):
         np.testing.assert_allclose(amp, exp_amp, rtol=1E-3)
         np.testing.assert_allclose(phase, exp_ph, rtol=1E-3)
 
-    def test_response_list_raises_error_if_out_of_range(self):
-        """
-        If extrpolating a lot it should raise an error.
-        """
-        inv = read_inventory(os.path.join(self.data_dir, "IM_IL31__BHZ.xml"))
-
-        # The true sampling rate is 40 - this will thus request data that is
-        # too high frequent and thus cannot be extracted from the response
-        # list.
-        sampling_rate = 45.0
-        t_samp = 1.0 / sampling_rate
-        nfft = 100
-
-        with self.assertRaises(ValueError) as e:
-            inv[0][0][0].response.get_evalresp_response(
-                t_samp=t_samp, nfft=nfft, output="VEL", start_stage=None,
-                end_stage=None)
-
-        self.assertEqual(
-            str(e.exception),
-            "Cannot calculate the response as it contains a response list "
-            "stage with frequencies only from -0.0096 - 20.0096 Hz. You are "
-            "requesting a response from 0.4500 - 22.5000 Hz.")
-
     def test_response_with_no_units_in_stage_1(self):
         """
         ObsPy has some heuristics to deal with this particular degenerate case.
@@ -474,12 +656,11 @@ class ResponseTestCase(unittest.TestCase):
 
         # The units should already have been fixed from reading the StationXML
         # files...
-        self.assertEqual(r.response_stages[0].input_units, "M/S")
-        self.assertEqual(r.response_stages[0].input_units_description,
-                         "Meters per second")
-        self.assertEqual(r.response_stages[0].output_units, "V")
-        self.assertEqual(r.response_stages[0].output_units_description,
-                         "VOLTS")
+        assert r.response_stages[0].input_units == "M/S"
+        assert r.response_stages[0].input_units_description == \
+            "Meters per second"
+        assert r.response_stages[0].output_units == "V"
+        assert r.response_stages[0].output_units_description == "VOLTS"
 
         # We have to set the units to None here as there is some other logic in
         # reading the StationXML files that sets them based on other units...
@@ -491,13 +672,11 @@ class ResponseTestCase(unittest.TestCase):
             out = r.get_evalresp_response_for_frequencies(
                 np.array([0.5, 1.0, 2.0]), output="DISP")
 
-        self.assertEqual(len(w), 2)
-        self.assertEqual(
-            w[0].message.args[0],
-            "Set the input units of stage 1 to the overall input units.")
-        self.assertEqual(
-            w[1].message.args[0],
-            "Set the output units of stage 1 to the input units of stage 2.")
+        assert len(w) == 2
+        assert w[0].message.args[0] == \
+            "Set the input units of stage 1 to the overall input units."
+        assert w[1].message.args[0] == \
+            "Set the output units of stage 1 to the input units of stage 2."
 
         # Values compared to evalresp output from RESP file - might not be
         # right but it does guarantee that ObsPy behaves like evalresp - be
@@ -542,7 +721,7 @@ class ResponseTestCase(unittest.TestCase):
 
     def test_str_method_of_the_polynomial_response_stage(self):
         # First with gain and gain frequency.
-        self.assertEqual(str(PolynomialResponseStage(
+        assert str(PolynomialResponseStage(
             stage_sequence_number=2,
             stage_gain=12345.0,
             stage_gain_frequency=1.0,
@@ -561,28 +740,27 @@ class ResponseTestCase(unittest.TestCase):
             decimation_factor=2,
             decimation_offset=3.0,
             decimation_delay=4.0,
-            decimation_correction=True)),
-            "Response type: PolynomialResponseStage, "
-            "Stage Sequence Number: 2\n"
-            "\tFrom PA (Pascal) to COUNTS (digital_counts)\n"
-            "\tStage gain: 12345.0, defined at 1.00 Hz\n"
-            "\tDecimation:\n"
-            "\t\tInput Sample Rate: 1.00 Hz\n"
-            "\t\tDecimation Factor: 2\n"
-            "\t\tDecimation Offset: 3\n"
-            "\t\tDecimation Delay: 4.00\n"
-            "\t\tDecimation Correction: 1.00\n"
-            "\tPolynomial approximation type: MACLAURIN\n"
-            "\tFrequency lower bound: 1.0\n"
-            "\tFrequency upper bound: 2.0\n"
-            "\tApproximation lower bound: 3.0\n"
-            "\tApproximation upper bound: 4.0\n"
-            "\tMaximum error: 1.5\n"
+            decimation_correction=True)) == \
+            "Response type: PolynomialResponseStage, " \
+            "Stage Sequence Number: 2\n" \
+            "\tFrom PA (Pascal) to COUNTS (digital_counts)\n" \
+            "\tStage gain: 12345.0, defined at 1.00 Hz\n" \
+            "\tDecimation:\n" \
+            "\t\tInput Sample Rate: 1.00 Hz\n" \
+            "\t\tDecimation Factor: 2\n" \
+            "\t\tDecimation Offset: 3\n" \
+            "\t\tDecimation Delay: 4.00\n" \
+            "\t\tDecimation Correction: 1.00\n" \
+            "\tPolynomial approximation type: MACLAURIN\n" \
+            "\tFrequency lower bound: 1.0\n" \
+            "\tFrequency upper bound: 2.0\n" \
+            "\tApproximation lower bound: 3.0\n" \
+            "\tApproximation upper bound: 4.0\n" \
+            "\tMaximum error: 1.5\n" \
             "\tNumber of coefficients: 3"
-        )
 
         # Now only the very minimum.
-        self.assertEqual(str(PolynomialResponseStage(
+        assert str(PolynomialResponseStage(
             stage_sequence_number=4,
             stage_gain=None,
             stage_gain_frequency=None,
@@ -596,19 +774,18 @@ class ResponseTestCase(unittest.TestCase):
             approximation_upper_bound=None,
             maximum_error=None,
             coefficients=[],
-            approximation_type="MACLAURIN")),
-            "Response type: PolynomialResponseStage, "
-            "Stage Sequence Number: 4\n"
-            "\tFrom UNKNOWN to UNKNOWN\n"
-            "\tStage gain: UNKNOWN, defined at UNKNOWN Hz\n"
-            "\tPolynomial approximation type: MACLAURIN\n"
-            "\tFrequency lower bound: None\n"
-            "\tFrequency upper bound: None\n"
-            "\tApproximation lower bound: None\n"
-            "\tApproximation upper bound: None\n"
-            "\tMaximum error: None\n"
+            approximation_type="MACLAURIN")) == \
+            "Response type: PolynomialResponseStage, " \
+            "Stage Sequence Number: 4\n" \
+            "\tFrom UNKNOWN to UNKNOWN\n" \
+            "\tStage gain: UNKNOWN, defined at UNKNOWN Hz\n" \
+            "\tPolynomial approximation type: MACLAURIN\n" \
+            "\tFrequency lower bound: None\n" \
+            "\tFrequency upper bound: None\n" \
+            "\tApproximation lower bound: None\n" \
+            "\tApproximation upper bound: None\n" \
+            "\tMaximum error: None\n" \
             "\tNumber of coefficients: 0"
-        )
 
     def test_get_sampling_rates(self):
         """
@@ -616,19 +793,17 @@ class ResponseTestCase(unittest.TestCase):
         """
         # Test for the default inventory.
         resp = read_inventory()[0][0][0].response
-        self.assertEqual(
-            resp.get_sampling_rates(),
+        assert resp.get_sampling_rates() == \
             {1: {'decimation_factor': 1,
                  'input_sampling_rate': 200.0,
                  'output_sampling_rate': 200.0},
              2: {'decimation_factor': 1,
                  'input_sampling_rate': 200.0,
-                 'output_sampling_rate': 200.0}})
+                 'output_sampling_rate': 200.0}}
 
         # Another, well behaved file.
         inv = read_inventory(os.path.join(self.data_dir, "AU.MEEK.xml"))
-        self.assertEqual(
-            inv[0][0][0].response.get_sampling_rates(),
+        assert inv[0][0][0].response.get_sampling_rates() == \
             {1: {'decimation_factor': 1,
                  'input_sampling_rate': 600.0,
                  'output_sampling_rate': 600.0},
@@ -643,13 +818,12 @@ class ResponseTestCase(unittest.TestCase):
                  'output_sampling_rate': 200.0},
              5: {'decimation_factor': 10,
                  'input_sampling_rate': 200.0,
-                 'output_sampling_rate': 20.0}})
+                 'output_sampling_rate': 20.0}}
 
         # This file lacks decimation attributes for the first two stages as
         # well as one of the later ones. These thus have to be inferred.
         inv = read_inventory(os.path.join(self.data_dir, "DK.BSD..BHZ.xml"))
-        self.assertEqual(
-            inv[0][0][0].response.get_sampling_rates(),
+        assert inv[0][0][0].response.get_sampling_rates() == \
             {1: {'decimation_factor': 1,
                  'input_sampling_rate': 30000.0,
                  'output_sampling_rate': 30000.0},
@@ -679,7 +853,7 @@ class ResponseTestCase(unittest.TestCase):
                  'output_sampling_rate': 100.0},
              10: {'decimation_factor': 5,
                   'input_sampling_rate': 100.0,
-                  'output_sampling_rate': 20.0}})
+                  'output_sampling_rate': 20.0}}
 
     def test_response_calculation_paz_without_decimation(self):
         """
@@ -756,10 +930,26 @@ class ResponseTestCase(unittest.TestCase):
             resp.instrument_sensitivity.frequency,
             1.0)
 
-
-def suite():
-    return unittest.makeSuite(ResponseTestCase, 'test')
-
-
-if __name__ == '__main__':
-    unittest.main(defaultTest='suite')
+    def test_warning_response_list_extrapolation(self):
+        """
+        Tests that a warning message is shown when a response calculation
+        involving a response list stage includes (spline) extrapolation into
+        frequency ranges outside of the band defined by the response list stage
+        elements (frequency-amplitude-phase pairs).
+        """
+        # create some bogus response list stage for the test
+        elems = [
+            ResponseListElement(x, 1, 0) for x in (1, 2, 5, 10, 20, 40, 50)]
+        stage = ResponseListResponseStage(
+            1, 1, 10, "M/S", "M/S", response_list_elements=elems)
+        sens = InstrumentSensitivity(1, 10, "M/S", "M/S")
+        resp = Response(response_stages=[stage], instrument_sensitivity=sens)
+        msg = ("The response contains a response list stage with frequencies "
+               "only from 1.0000 - 50.0000 Hz. You are requesting a response "
+               "from 25.0000 - 100.0000 Hz. The calculated response will "
+               "contain extrapolation beyond the frequency band constrained "
+               "by the response list stage. Please consider adjusting "
+               "'pre_filt' and/or 'water_level' during response removal "
+               "accordingly.")
+        with CatchAndAssertWarnings(expected=[(UserWarning, msg)]):
+            resp.get_evalresp_response(0.005, 2**3)

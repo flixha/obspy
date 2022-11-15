@@ -11,7 +11,7 @@ This is a modified version of obspy.io.stationxml and obspy.io.sc3ml.
     The ObsPy Development Team (devs@obspy.org)
 :license:
     GNU Lesser General Public License, Version 3
-    (http://www.gnu.org/copyleft/lesser.html)
+    (https://www.gnu.org/copyleft/lesser.html)
 """
 import inspect
 import math
@@ -623,7 +623,7 @@ def _read_response_stage(stage, rate, stage_number, input_units,
     :param rate: stage sample rate
     :param stage_number: response stage number
     :param input_units: input units of stage
-    :param output_units output units of stage
+    :param output_units: output units of stage
     """
     elem_type = stage.tag.split("}")[1]
 

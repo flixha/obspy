@@ -46,6 +46,7 @@ Nordic file format support for ObsPy
 import warnings
 from pathlib import Path
 import io
+import os
 import re
 import os
 from math import sqrt
@@ -58,6 +59,7 @@ from obspy.core.event import (
     Arrival, Amplitude, FocalMechanism, MomentTensor, NodalPlane, NodalPlanes,
     QuantityError, Tensor, ResourceIdentifier, Comment)
 from obspy.core.event.header import EventType, EventTypeCertainty
+from obspy.core.inventory.util import _resolve_seedid, _add_resolve_seedid_doc
 from obspy.io.nordic import NordicParsingError
 from obspy.io.nordic.utils import (
     _int_conv, _str_conv, _float_conv, _evmagtonor, _nortoevmag,
@@ -143,16 +145,17 @@ def readheader(sfile, encoding='latin-1'):
         tagged_lines = _get_line_tags(f)
         if len(tagged_lines['1']) == 0:
             raise NordicParsingError("No header lines found")
-        header = _readheader(head_lines=tagged_lines['1'])
+        header, _ = _readheader(head_lines=tagged_lines['1'])
     return header
 
 
 def _readheader(head_lines):
     """
     Internal header reader.
+
     :type head_lines: list
-    :param head_lines:
-        List of tuples of (strings, line-number) of the header lines.
+    :param head_lines: List of tuples of (strings, line-number) of the header
+        lines.
 
     :returns: :class:`~obspy.core.event.event.Event`
     """
@@ -162,20 +165,49 @@ def _readheader(head_lines):
     # Construct a rough catalog, then merge events together to cope with
     # multiple origins
     _cat = Catalog()
+    # Make a list of the line numbers that are associated with proper origins
+    # (i.e., not just extended origin lines)
+    origin_line_numbers = []
     for line in head_lines:
         _cat.append(_read_origin(line=line[0]))
+        origin_line_numbers.append(line[1])
     new_event = _cat.events.pop(0)
-    for event in _cat:
+    # No need to check first origin line for whether it is an extended line -
+    # it has to be the main defining line.
+    check_origin_line_numbers = origin_line_numbers.copy()
+    check_origin_line_numbers.pop(0)
+
+    # origin_line_numbers is a list of line numbers where a new origin
+    # definitino starts in the S-file. Hence origin lines that contain extended
+    # information (more magnitudes, higher accuracy) for a previous origin line
+    # are not part of the list.
+    # for event, orig_line_number in zip(_cat, origin_line_numbers[1:]):
+    for event, orig_line_number in zip(_cat, check_origin_line_numbers):
         matched = False
         origin_times = [origin.time for origin in new_event.origins]
         origin = event.origins[0]
-        if origin.time in origin_times:
+        otime = origin.time
+        if (otime in origin_times and not origin.latitude and
+                not origin.longitude and not origin.depth):
             origin_index = origin_times.index(origin.time)
             agency = new_event.origins[origin_index].creation_info.agency_id
             if event.creation_info.agency_id == agency:
                 event_desc = new_event.event_descriptions[origin_index].text
                 if event.event_descriptions[0].text == event_desc:
                     matched = True
+                    origin_line_numbers.remove(orig_line_number)
+        # Nordic format actually only requires year, month, day, and agency
+        # to appear in extended hypocenter line.
+        if not matched:
+            if otime.hour == 0 and otime.minute == 0 and otime.second == 0:
+                agency_ids = [origin.creation_info.agency_id
+                              for origin in new_event.origins]
+                agency_id = event.origins[0].creation_info.agency_id
+                if agency_id in agency_ids:
+                    origin_index = agency_ids.index(agency_id)
+                    matched = True
+                    origin_line_numbers.remove(orig_line_number)
+
         new_event.magnitudes.extend(event.magnitudes)
         if not matched:
             new_event.origins.append(event.origins[0])
@@ -209,7 +241,7 @@ def _readheader(head_lines):
                 resource_id
         except IndexError:
             pass
-    return new_event
+    return new_event, origin_line_numbers
 
 
 def _read_origin(line):
@@ -217,7 +249,7 @@ def _read_origin(line):
     Read one origin (type 1) line.
 
     :param str line: Origin format (type 1) line
-    :return: `~obspy.core.event.Event`
+    :return: `~obspy.core.event.event.Event`
     """
     new_event = Event()
     try:
@@ -237,7 +269,7 @@ def _read_origin(line):
     new_event.event_type = EventType(EVENT_TYPE_MAPPING_FROM_SEISAN.get(
         line[22]))
     new_event.event_type_certainty = EventTypeCertainty(
-        EVENT_TYPE_CERTAINTY_MAPPING_FROM_SEISAN.get(line[21]))
+        EVENT_TYPE_CERTAINTY_MAPPING_FROM_SEISAN.get(line[22]))
     for key, _slice in [('latitude', slice(23, 30)),
                         ('longitude', slice(30, 38)),
                         ('depth', slice(38, 43))]:
@@ -317,7 +349,7 @@ def _read_spectral_info(tagged_lines, event=None):
 
     :type tagged_lines: dict
     :param tagged_lines: dictionary of tagged lines
-    :type event: :class:`~obspy.core.event.Event`
+    :type event: :class:`~obspy.core.event.event.Event`
     :param event: Event to associate spectral info with
 
     :returns:
@@ -327,7 +359,7 @@ def _read_spectral_info(tagged_lines, event=None):
     if '3' not in tagged_lines.keys():
         return {}
     if event is None:
-        event = _readheader(head_lines=tagged_lines['1'])
+        event, _ = _readheader(head_lines=tagged_lines['1'])
     origin_date = UTCDateTime(event.origins[0].time.date)
     relevant_lines = []
     for line in tagged_lines['3']:
@@ -402,8 +434,9 @@ def _read_spectral_info(tagged_lines, event=None):
     return spec_inf
 
 
+@_add_resolve_seedid_doc
 def read_nordic(select_file, return_wavnames=False, encoding='latin-1',
-                nordic_format='UKN'):
+                nordic_format='UKN', **kwargs):
     """
     Read a catalog of events from a Nordic formatted select file.
 
@@ -444,14 +477,16 @@ def read_nordic(select_file, return_wavnames=False, encoding='latin-1',
         elif len(event_str) > 0:
             catalog, wav_names = _extract_event(
                 event_str=event_str, catalog=catalog, wav_names=wav_names,
-                return_wavnames=return_wavnames, nordic_format=nordic_format)
+                return_wavnames=return_wavnames, nordic_format=nordic_format,
+                **kwargs)
             event_str = []
     f.close()
     if len(event_str) > 0:
         # May occur if the last line of the file is not blank as it should be
         catalog, wav_names = _extract_event(
             event_str=event_str, catalog=catalog, wav_names=wav_names,
-            return_wavnames=return_wavnames, nordic_format=nordic_format)
+            return_wavnames=return_wavnames, nordic_format=nordic_format,
+            **kwargs)
     if return_wavnames:
         return catalog, wav_names
     for event in catalog:
@@ -460,12 +495,12 @@ def read_nordic(select_file, return_wavnames=False, encoding='latin-1',
 
 
 def _extract_event(event_str, catalog, wav_names, return_wavnames=False,
-                   nordic_format='UKN'):
+                   nordic_format='UKN', **kwargs):
     """
     Helper to extract event info from a list of line strings.
 
     :param event_str: List of lines from sfile
-    :type event_str: list of str
+    :type event_str: list[str]
     :param catalog: Catalog to append the event to
     :type catalog: `obspy.core.event.Catalog`
     :param wav_names: List of waveform names
@@ -483,16 +518,18 @@ def _extract_event(event_str, catalog, wav_names, return_wavnames=False,
     for event_line in event_str:
         tmp_sfile.write(event_line)
     tagged_lines = _get_line_tags(f=tmp_sfile)
-    new_event = _readheader(head_lines=tagged_lines['1'])
+    new_event, origin_line_numbers = _readheader(head_lines=tagged_lines['1'])
     new_event = _read_uncertainty(tagged_lines, new_event)
-    new_event = _read_highaccuracy(tagged_lines, new_event)
+    new_event = _read_highaccuracy(
+        tagged_lines, new_event, origin_line_numbers)
     new_event = _read_focal_mechanisms(tagged_lines, new_event)
     new_event = _read_moment_tensors(tagged_lines, new_event)
     new_event = _read_comments(tagged_lines, new_event)
     if return_wavnames:
         wav_names.append(_readwavename(tagged_lines=tagged_lines['6']))
     new_event = _read_picks(tagged_lines=tagged_lines, new_event=new_event,
-                            nordic_format=nordic_format)
+                            nordic_format=nordic_format, **kwargs)
+    new_event = _read_event_id(tagged_lines=tagged_lines, event=new_event)
     catalog += new_event
     return catalog, wav_names
 
@@ -538,7 +575,7 @@ def _read_uncertainty(tagged_lines, event):
     # But lat / lon / depth-errors may still be filled
     if errors['y_err'] is not None:
         orig.latitude_errors = QuantityError(_km_to_deg_lat(errors['y_err']))
-    if errors['x_err'] is not None:
+    if errors['x_err'] is not None and orig.latitude:
         orig.longitude_errors = QuantityError(_km_to_deg_lon(errors['x_err'],
                                                              orig.latitude))
     if errors['z_err'] is not None:
@@ -558,56 +595,89 @@ def _read_uncertainty(tagged_lines, event):
     return event
 
 
-def _read_highaccuracy(tagged_lines, event):
+def _read_highaccuracy(tagged_lines, event, origin_line_numbers):
     """
     Read high accuracy origin line.
 
     :param tagged_lines: Lines keyed by line type
     :type tagged_lines: dict
+    :param origin_line_numbers:
+        List of the line numbers of the proper origins (i.e., exluding ex-
+        tended origin lines)
+    :type origin_line_numbers: list of int
     :returns: updated event
     :rtype: :class:`~obspy.core.event.event.Event`
+
+    note:
+    The S-file can include a type=H line for each hypocenter (new from
+    version 12). Prior to version 12.0 only one type=H line was allowed in
+    SEISAN. The H line gives the same solution as the type=1 line, but with
+    higher accuracy. In order to know which H-line belongs to which 1-line,
+    the location program indicator and the agency must match. If only one
+    H-line and no agency, it is assumed it belongs to the main hypocenter.
+    This ensures backwards compatibility.
     """
     if 'H' not in tagged_lines.keys():
         return event
-    # In principle there shouldn't be more than one high precision line
-    line = tagged_lines['H'][0][0]
-    try:
-        dt = {'Y': _int_conv(line[1:5]),
-              'MO': _int_conv(line[6:8]),
-              'D': _int_conv(line[8:10]),
-              'H': _int_conv(line[11:13]),
-              'MI': _int_conv(line[13:15]),
-              'S': _float_conv(line[16:23])}
-    except ValueError:
-        pass
-    try:
-        ev_time = UTCDateTime(dt['Y'], dt['MO'], dt['D'],
-                              dt['H'], dt['MI'], 0, 0) + dt['S']
-        if abs(event.origins[0].time - ev_time) < 0.1:
-            event.origins[0].time = ev_time
+    agency_ids = [origin.creation_info.agency_id for origin in event.origins]
+
+    for line, ha_line_number in tagged_lines['H']:
+        agency_id = _str_conv(line[60:63])
+        # Prior to version 12 there could only be one high accuracy line; if
+        # there is no agency id or no origin with matching agency id, then
+        # refer to the first origin.
+        if (len(tagged_lines['H']) == 1 and
+                (agency_id is None or agency_id not in agency_ids)):
+            origin_index = 0
         else:
-            print('High accuracy time differs from normal time by >0.1s')
-    except ValueError:
-        pass
-    try:
-        values = {'latitude': _float_conv(line[23:32]),
-                  'longitude': _float_conv(line[33:43]),
-                  'depth': _float_conv(line[44:52]),
-                  'rms': _float_conv(line[53:59])}
-    except ValueError:
-        pass
-    if values['latitude'] is not None:
-        event.origins[0].latitude = values['latitude']
-    if values['longitude'] is not None:
-        event.origins[0].longitude = values['longitude']
-    if values['depth'] is not None:
-        event.origins[0].depth = values['depth'] * 1000.
-    if values['rms'] is not None:
-        if event.origins[0].quality is not None:
-            event.origins[0].quality.standard_error = values['rms']
-        else:
-            event.origins[0].quality = OriginQuality(
-                standard_error=values['rms'])
+            # Select the proper origin header line that is written just above
+            # the high accuracy line and select the relevant origin index.
+            origin_index = [
+                jl for jl, o_line_no in enumerate(origin_line_numbers)
+                if o_line_no < ha_line_number][-1]
+        try:
+            dt = {'Y': _int_conv(line[1:5]),
+                  'MO': _int_conv(line[6:8]),
+                  'D': _int_conv(line[8:10]),
+                  'H': _int_conv(line[11:13]),
+                  'MI': _int_conv(line[13:15]),
+                  'S': _float_conv(line[16:23])}
+        except ValueError:
+            pass
+        try:
+            ev_time = UTCDateTime(dt['Y'], dt['MO'], dt['D'],
+                                  dt['H'], dt['MI'], 0, 0) + dt['S']
+            if abs(event.origins[origin_index].time - ev_time) < 0.1:
+                event.origins[origin_index].time = ev_time
+            else:
+                print('High accuracy time differs from normal time by >0.1s')
+        except ValueError:
+            pass
+        values = {'latitude': None,
+                  'longitude': None,
+                  'depth': None,
+                  'rms': None}
+        try:
+            values = {'latitude': _float_conv(line[23:32]),
+                      'longitude': _float_conv(line[33:43]),
+                      'depth': _float_conv(line[44:52]),
+                      'rms': _float_conv(line[53:59])}
+        except ValueError:
+            pass
+
+        if values['latitude'] is not None:
+            event.origins[origin_index].latitude = values['latitude']
+        if values['longitude'] is not None:
+            event.origins[origin_index].longitude = values['longitude']
+        if values['depth'] is not None:
+            event.origins[origin_index].depth = values['depth'] * 1000.
+        if values['rms'] is not None:
+            if event.origins[origin_index].quality is not None:
+                event.origins[origin_index].quality.standard_error = (
+                    values['rms'])
+            else:
+                event.origins[origin_index].quality = OriginQuality(
+                    standard_error=values['rms'])
     return event
 
 
@@ -682,7 +752,7 @@ def _read_moment_tensors(tagged_lines, event):
             depth=float(mt_line_1[38:43]) * 1000,
             creation_info=CreationInfo(agency_id=mt_line_1[45:48].strip())))
         event.magnitudes.append(Magnitude(
-            mag=float(mt_line_1[55:59]),
+            mag=_float_conv(mt_line_1[55:59]),
             magnitude_type=_nortoevmag(mt_line_1[59]),
             creation_info=CreationInfo(agency_id=mt_line_1[60:63].strip()),
             origin_id=event.origins[-1].resource_id))
@@ -730,7 +800,36 @@ def _read_comments(tagged_lines, event):
     return event
 
 
-def _read_picks(tagged_lines, new_event, nordic_format='UKN'):
+def _read_event_id(tagged_lines, event):
+    """
+    Internal reader for ID line.
+
+    :type tagged_lines: dict
+    :param tagged_lines: dictionary of tagged lines
+    :type event: :class:`~obspy.core.event.event.Event`
+    :param event: Event to associate spectral info with
+
+    :returns:
+        event with event.extra.nordic_event_id set to event ID from Nordic file
+    """
+    if 'I' not in tagged_lines.keys():
+        return event
+    id_lines = tagged_lines['I']
+    if len(id_lines) > 1:
+        warnings.warn('Nordic file has more than one ID line, will use first' +
+                      'ID line only.')
+    for id_line, tag in id_lines:
+        event_id = id_line.split('ID:')[-1].split(' ')[0].strip('dSLRD')
+        break
+    event.extra = {
+        'nordic_event_id': {
+            'value': event_id,
+            'namespace':
+                'https://seis.geus.net/software/seisan/node239.html'}}
+    return event
+
+
+def _read_picks(tagged_lines, new_event, nordic_format='UKN', **kwargs):
     """
     Internal pick reader. Use read_nordic instead.
 
@@ -762,9 +861,11 @@ def _read_picks(tagged_lines, new_event, nordic_format='UKN'):
         nordic_format, phase_ok = check_nordic_format_version(pickline)
 
     if nordic_format == 'NEW':
-        new_event = _read_picks_nordic_new(pickline, new_event, header, evtime)
+        new_event = _read_picks_nordic_new(pickline, new_event, header, evtime,
+                                           **kwargs)
     elif nordic_format == 'OLD':
-        new_event = _read_picks_nordic_old(pickline, new_event, header, evtime)
+        new_event = _read_picks_nordic_old(pickline, new_event, header, evtime,
+                                           **kwargs)
     elif nordic_format == 'UKN':
         warnings.warn('Cannot check whether Nordic format is Old or New, is '
                       'this really a Nordic file?')
@@ -865,7 +966,7 @@ def check_nordic_format_version(pickline):
     return nordic_format, is_phase
 
 
-def _read_picks_nordic_old(pickline, new_event, header, evtime):
+def _read_picks_nordic_old(pickline, new_event, header, evtime, **kwargs):
     """
     Reads the type 4 line of the old Nordic format.
     """
@@ -895,7 +996,7 @@ def _read_picks_nordic_old(pickline, new_event, header, evtime):
         # 00 or 24: this signifies a pick over a day boundary.
         pick_hour = int(line[18:20].strip() or 0)
         pick_minute = int(line[20:22].strip() or 0)
-        pick_seconds = float(line[22:29].strip() or 0)  # 29 should be blank,
+        pick_seconds = float(line[22:29].strip() or 0.0)  # 29 should be blank,
         # but sometimes SEISAN appears to overflow here, see #2348
         if pick_hour == 0 and evtime.hour == 23:
             day_add = 86400
@@ -915,8 +1016,10 @@ def _read_picks_nordic_old(pickline, new_event, header, evtime):
             warnings.warn('%s is not currently supported' % header[57:60])
         finalweight = _int_conv(line[68:70])
         # Create a new obspy.event.Pick class for this pick
-        _waveform_id = WaveformStreamID(station_code=line[1:6].strip(),
-                                        channel_code=line[6:8].strip())
+        widargs = _resolve_seedid(
+            station=line[1:6].strip(), component=line[6:8].strip(), time=time,
+            **kwargs)
+        _waveform_id = WaveformStreamID(*widargs)
         pick = Pick(waveform_id=_waveform_id, phase_hint=phase,
                     polarity=polarity, time=time)
         try:
@@ -935,7 +1038,8 @@ def _read_picks_nordic_old(pickline, new_event, header, evtime):
         if _float_conv(line[46:51]) is not None:
             pick.backazimuth = _float_conv(line[46:51])
         app_velocity = _float_conv(line[51:56])
-        if app_velocity is not None and app_velocity != 999.0:
+        if (app_velocity is not None and app_velocity != 999.0 and
+                app_velocity != 0):
             pick.horizontal_slowness = 1 / kilometers2degrees(app_velocity)
         # Create new obspy.event.Amplitude class which references above Pick
         # only if there is an amplitude picked.
@@ -995,7 +1099,7 @@ def _read_picks_nordic_old(pickline, new_event, header, evtime):
     return new_event
 
 
-def _read_picks_nordic_new(pickline, new_event, header, evtime):
+def _read_picks_nordic_new(pickline, new_event, header, evtime, **kwargs):
     """
     Reads the type 4 line of the old Nordic format.
     """
@@ -1012,7 +1116,7 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime):
         if _nordic_iasp_phase_ok(phase) and phase not in ['END', 'BAZ']:
             polarity = line[43]
         else:
-            polarity = ''
+            polarity = 'undecidable'
         polarity = POLARITY_MAPPING.get(polarity, None)  # Empty could be None
         # or undecidable.
         # It is valid nordic for the origin to be hour 23 and picks to be hour
@@ -1039,10 +1143,14 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime):
             warnings.warn('%s is not currently supported' % header[60:63])
         finalweight = _int_conv(line[68:70])
         # Create a new obspy.event.Pick class for this pick
-        _waveform_id = WaveformStreamID(station_code=line[1:6].strip(),
-                                        channel_code=line[6:9].strip(),
-                                        network_code=line[10:12].strip(),
-                                        location_code=line[12:14].strip())
+        sta, cha = line[1:6].strip(), line[6:9].strip()
+        net, loc = line[10:12].strip(), line[12:14].strip()
+        if net == '' and loc == '':
+            widargs = _resolve_seedid(station=sta, component=cha, time=time,
+                                      **kwargs)
+        else:
+            widargs = net, sta, loc, cha
+        _waveform_id = WaveformStreamID(*widargs)
         pick = Pick(waveform_id=_waveform_id, phase_hint=phase,
                     polarity=polarity, time=time)
         # agency and operator / author / analyst
@@ -1080,16 +1188,19 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime):
             if not found_baz_associated_pick:
                 for existing_pick in new_event.picks:
                     if (existing_pick.waveform_id == pick.waveform_id and
-                            existing_pick.time == pick.time):
+                            existing_pick.time == pick.time and
+                            not _is_iasp_ampl_phase(existing_pick.phase_hint)):
                         pick = existing_pick
                         found_baz_associated_pick = True
                         break
             pick.backazimuth = _float_conv(line[37:44])
             app_velocity = _float_conv(line[44:50])
-            if app_velocity is not None and app_velocity != 999.0:
+            if (app_velocity is not None and app_velocity != 0 and
+                    app_velocity != 999.0):
                 pick.horizontal_slowness = 1 / kilometers2degrees(app_velocity)
         # Create new obspy.event.Amplitude class which references above Pick
         # only if there is an amplitude picked.
+        is_coda_ref_pick = False
         if (_is_iasp_ampl_phase(phase) and _float_conv(line[37:44]) is not None
                 and not found_baz_associated_pick):
             _amplitude = Amplitude(generic_amplitude=_float_conv(line[37:44]),
@@ -1115,6 +1226,8 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime):
             # Magnitude for single trace / station computed from amplitude
             # if line[63:68].strip() != '':
             mag_residual = _float_conv(line[63:68])
+            if mag_residual is None:
+                mag_residual = 0
             # assoc_mag = new_event.magnitudes[0]
             assoc_mag = None
             for mag in new_event.magnitudes:
@@ -1137,6 +1250,14 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime):
                     creation_info=pick.creation_info)
                 new_event.station_magnitudes.append(_trace_mag)
         elif phase == 'END' and _int_conv(line[37:44]) is not None:
+            # Coda duration amplitude - should be generally in reference to the
+            # previous pick, then it can be added simply as an amplitude
+            # referencing the pick; or it could become its own pick.
+            if (len(new_event.picks) > 0
+                    and new_event.picks[-1].waveform_id.station_code ==
+                    pick.waveform_id.station_code):
+                pick = new_event.picks[-1]
+                is_coda_ref_pick = True
             # Create an amplitude instance for coda duration also
             _amplitude = Amplitude(generic_amplitude=_int_conv(line[37:44]),
                                    pick_id=pick.resource_id,
@@ -1152,7 +1273,7 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime):
             new_event.amplitudes.append(_amplitude)
 
         # Create new obspy.event.Arrival class referencing above Pick
-        if not _is_iasp_ampl_phase(phase):
+        if not _is_iasp_ampl_phase(phase) and not phase == 'END':
             # If there is a pick associated with a BAZ, then there's also an
             # arrival for that pick already
             if found_baz_associated_pick:
@@ -1182,10 +1303,62 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime):
                 new_event.origins[0].arrivals.append(arrival)
         # Add the pick, but do not add it as new if the pick was only updated
         # with new information (BAZ, slowness etc.)
-        if not found_baz_associated_pick:
+        if not (found_baz_associated_pick or is_coda_ref_pick):
             new_event.picks.append(pick)
+    new_event = _check_baz_appvel_assignment(new_event)
 
     return new_event
+
+
+def _check_baz_appvel_assignment(event):
+    """
+    When a BAZ-line comes before the respective pick line, then we need to
+    check afterwards whether all baz - app-vel values are properly assigned
+    """
+    remove_pick_list = []
+    for pick in event.picks:
+        found_baz_associated_pick = False
+        if 'BAZ' in pick.phase_hint and pick.backazimuth is not None:
+            # Seisan phase name can be e.g. "BAZ-P"
+            baz_phase_type = pick.phase_hint.removeprefix('BAZ-')
+            # Check if there is matching pick for the BAZ. THIS MEANS THAT
+            # THE BAZ-line in Nordic file has to follow the actual time pick!
+            for existing_pick in event.picks:
+                if (existing_pick.waveform_id == pick.waveform_id and
+                        existing_pick.phase_hint == baz_phase_type and
+                        existing_pick.time == pick.time and
+                        not existing_pick == pick):
+                    # pick = existing_pick  # wrong, right??
+                    found_baz_associated_pick = True
+                    break
+            # BAZ-phase name doesn't have to specify the associated phase
+            # name - as a secondary resort, compare pick times only.
+            if not found_baz_associated_pick:
+                for existing_pick in event.picks:
+                    if (existing_pick.waveform_id == pick.waveform_id and
+                            existing_pick.time == pick.time and
+                            not _is_iasp_ampl_phase(existing_pick.phase_hint)
+                            and not existing_pick == pick):
+                        # pick = existing_pick
+                        found_baz_associated_pick = True
+                        break
+            if not found_baz_associated_pick:
+                continue
+            existing_pick.backazimuth = pick.backazimuth
+            if pick.horizontal_slowness:
+                existing_pick.horizontal_slowness = pick.horizontal_slowness
+            remove_pick_list.append(pick)
+            for amplitude in event.amplitudes:
+                if amplitude.pick_id == pick.resource_id:
+                    amplitude.pick_id = existing_pick.resource_id
+            for origin in event.origins:
+                for arrival in origin.arrivals:
+                    if arrival.pick_id == pick.resource_id:
+                        arrival.pick_id = existing_pick.resource_id
+    # Remove the BAZ-picks that have become obsolete:
+    for pick in remove_pick_list:
+        event.picks.remove(pick)
+    return event
 
 
 def readwavename(sfile, encoding='latin-1'):
@@ -1321,7 +1494,7 @@ def write_select(catalog, filename, userid='OBSP', evtype='L',
     """
     Function to write a catalog to a select file in nordic format.
 
-    :type catalog: :class:`~obspy.core.event.event.Catalog`
+    :type catalog: :class:`~obspy.core.event.catalog.Catalog`
     :param catalog: A catalog of obspy events
     :type filename: str
     :param filename: Path to write to
@@ -1333,7 +1506,7 @@ def write_select(catalog, filename, userid='OBSP', evtype='L',
     :type wavefiles: list
     :param wavefiles:
         Waveforms to associate the events with, must be ordered in the same
-         way as the events in the catalog.
+        way as the events in the catalog.
     :type high_accuracy: bool
     :param high_accuracy:
         Whether to output pick seconds at 6.3f (high_accuracy) or
@@ -1364,7 +1537,8 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
                   wavefiles=None, explosion=False, nordic_format='OLD',
                   overwrite=True, string_io=None, high_accuracy=True):
     """
-    Write an :class:`~obspy.core.event.Event` to a nordic formatted s-file.
+    Write an :class:`~obspy.core.event.event.Event` to a nordic formatted
+    s-file.
 
     :type event: :class:`~obspy.core.event.event.Event`
     :param event: A single obspy event
@@ -1483,6 +1657,8 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
     # Write header line(s)
     sfile.write(_write_header_line(
         event, origin, evtype, is_preferred_origin=True))
+    if high_accuracy:
+        sfile.write(_write_high_accuracy_origin(origin))
     # Write hyp error line
     try:
         sfile.write(_write_hyp_error_line(origin) + '\n')
@@ -1493,6 +1669,8 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
         if not add_origin == origin:
             sfile.write(_write_header_line(event, add_origin, evtype,
                                            is_preferred_origin=False))
+            if high_accuracy:
+                sfile.write(_write_high_accuracy_origin(add_origin))
     # Write fault plane solution
     if hasattr(event, 'focal_mechanisms') and len(event.focal_mechanisms) > 0:
         for focal_mechanism in event.focal_mechanisms:
@@ -1509,10 +1687,8 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
             except AttributeError:
                 pass
     # Write line 2 (type: I) of s-file
-    sfile.write(
-        " Action:ARG {0} OP:{1} STATUS:               ID:{2}     I\n".format(
-            datetime.datetime.now().strftime("%y-%m-%d %H:%M"),
-            userid.ljust(4)[0:4], evtime.strftime("%Y%m%d%H%M%S")))
+    event_id_line = _write_event_id_line(event, userid=userid)
+    sfile.write(event_id_line)
     # Write line-type 6 of s-file
     for wavefile in wavefiles:
         # Do not write names that do not actually link to a waveform file
@@ -1670,6 +1846,46 @@ def _write_header_line(event, origin, evtype, is_preferred_origin=True):
     return ''.join([''.join(line) for line in lines])
 
 
+def _write_high_accuracy_origin(origin):
+    """
+    Write high accuracy hypocenter line
+    E.g.:
+    1996  6 3 2006 35.511  46.78711  153.72245   33.011  1.923
+    """
+    # Write the header info.
+    if origin.latitude is not None:
+        lat = '{0:.5f}'.format(origin.latitude)
+    else:
+        lat = ''
+    if origin.longitude is not None:
+        lon = '{0:.5f}'.format(origin.longitude)
+    else:
+        lon = ''
+    if origin.depth is not None:
+        depth = '{0:.3f}'.format(origin.depth / 1000.0)
+    else:
+        depth = ''
+    evtime = origin.time
+    if not evtime:
+        return
+
+    # Cope with differences in event uncertainty naming
+    if origin.quality and origin.quality['standard_error']:
+        timerms = '{0:.3f}'.format(origin.quality['standard_error'])
+    else:
+        timerms = '0.000'
+
+    ha_origin_line = (
+        " {0} {1}{2} {3}{4} {5}.{6} {7} {8} {9} {10} {11}H\n".format(
+            evtime.year, str(evtime.month).rjust(2), str(evtime.day).rjust(2),
+            str(evtime.hour).rjust(2), str(evtime.minute).rjust(2),
+            str(evtime.second).rjust(2), str(evtime.microsecond).ljust(3)[0:3],
+            lat.rjust(9), lon.rjust(10), depth.rjust(8), timerms.rjust(6),
+            " " * 19))
+
+    return ha_origin_line
+
+
 def _write_moment_tensor_line(focal_mechanism):
     """
     Generate the two lines required for moment tensor solutions in Nordic.
@@ -1796,7 +2012,7 @@ def _write_hyp_error_line(origin):
             #     error_line[67:79] = ("%.4e" % (cov(1, 2) / 1.e06)).rjust(12)
             # else:
 
-    if origin.depth_errors.uncertainty:
+    if origin.depth_errors and origin.depth_errors.uncertainty:
         errors['z_err'] = origin.depth_errors.uncertainty / 1000.0
     else:
         errors['z_err'] = None
@@ -1852,8 +2068,8 @@ def _write_comment(comment):
         comment_line[-1] = '6'
 
     # Check if it's a type-I line comment:
-    if "ACTION" in comment_str.upper() and comment_str[-2:] == ' I':
-        comment_line[-1] = 'I'
+    # if "ACTION" in comment_str.upper() and comment_str[-2:] == ' I':
+    #     comment_line[-1] = 'I'
 
     n_comment_chars = len(comment_str)
     if n_comment_chars > 78:
@@ -1864,6 +2080,36 @@ def _write_comment(comment):
     comment_line[1:n_comment_chars+1] = comment_str[:n_comment_chars]
     comment_line = ''.join(comment_line)
     return comment_line
+
+
+def _write_event_id_line(event, userid=''):
+    """
+    Write type-I line from value in event.extra.nordic_event_id.value if
+    available, otherwise define event-ID from origin time.
+    """
+    id_line_str = (
+        " Action:ARG {0} OP:{1} STATUS:               ID:{2}     I\n")
+    if hasattr(event, 'extra') and 'nordic_event_id' in event.extra.keys():
+        id_line = id_line_str.format(
+            datetime.datetime.now().strftime("%y-%m-%d %H:%M"),
+            userid.ljust(4)[0:4],
+            event.extra.get('nordic_event_id')['value'])
+    else:
+        # Determine name from origin time
+        try:
+            origin = event.preferred_origin() or event.origins[0]
+        except IndexError:
+            msg = 'Need at least one origin with at least an origin time'
+            raise NordicParsingError(msg)
+        evtime = origin.time
+        if not evtime:
+            msg = ('event has an origin, but time is not populated.  ' +
+                   'This is required!')
+            raise NordicParsingError(msg)
+        id_line = id_line_str.format(
+            datetime.datetime.now().strftime("%y-%m-%d %H:%M"),
+            userid.ljust(4)[0:4], evtime.strftime("%Y%m%d%H%M%S"))
+    return id_line
 
 
 def nordpick(event, high_accuracy=True, nordic_format='OLD'):
@@ -1884,10 +2130,10 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
 
     .. note::
 
-        Currently angle of incidence is unsupported. This is because
-        :class:`~obspy.core.event.event.Event` stores takeoff angle rather than
-        incident angle, which would require computation from the value stored
-        in seisan.  Multiple weights are also not supported.
+        Nordic files contain an angle of incidence ("AIN") that is actually the
+        takeoff angle from the source, and hence now properly supported as
+        arrival.takeoff_angle.
+        Multiple weights are not supported.
     """
     # Nordic picks do not have a date associated with them - we need time
     # relative to some origin time.
@@ -1916,12 +2162,11 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
             weight = ' '
         # Extract velocity: Note that horizontal slowness in quakeML is stored
         # as s/deg and Seisan stores apparent velocity in km/s
-        if pick.horizontal_slowness is not None:
-            velocity = _str_conv(degrees2kilometers(
-                1.0 / pick.horizontal_slowness))
+        if pick.horizontal_slowness:
+            velocity = degrees2kilometers(1.0 / pick.horizontal_slowness)
         else:
             velocity = ' '
-        azimuth = _str_conv(pick.backazimuth)
+        backazimuth = _str_conv(pick.backazimuth)
         # Extract the correct arrival info for this pick - assuming only one
         # arrival per pick...
         arrival = [arrival for arrival in origin.arrivals
@@ -1932,9 +2177,9 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
             arrival = arrival[0]
             # Extract azimuth residual
             if arrival.backazimuth_residual is not None:
-                azimuthres = _str_conv(int(arrival.backazimuth_residual))
+                backazimuthres = _str_conv(int(arrival.backazimuth_residual))
             else:
-                azimuthres = ' '
+                backazimuthres = ' '
             if arrival.takeoff_angle is not None:
                 ain = _str_conv(arrival.takeoff_angle, rounded=1)
             else:
@@ -1967,13 +2212,13 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
             if arrival.time_weight is not None:
                 finalweight = _str_conv(int(round(
                     arrival.time_weight * 10))).rjust(2)[0:2]
-            if azimuth != ' ':
+            if backazimuth != ' ':
                 if arrival.backazimuth_weight is not None:
                     finalweight = _str_conv(int(round(
                         arrival.backazimuth_weight * 10))).rjust(2)[0:2]
         else:
-            (caz, distance, timeres, azimuthres, azimuth, finalweight,
-             ain) = (' ', ' ', ' ', ' ', ' ', '  ', ' ')
+            (caz, distance, timeres, backazimuthres, finalweight, ain) = (
+                ' ', ' ', ' ', ' ', '  ', ' ')
         phase_hint = pick.phase_hint or ' '
         # Extract amplitude: note there can be multiple amplitudes, but they
         # should be associated with different picks.
@@ -2020,6 +2265,8 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     peri = ' '
                     peri_round = False
                     amp = None
+                    coda_eval_mode = INV_EVALUTATION_MAPPING.get(
+                        amplitude.evaluation_mode, ' ')
                 if nordic_format == 'OLD':  # only use 1st amplitude
                     break
                 amp_list.append(amp)
@@ -2073,8 +2320,8 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
             pick_string_formatter = (
                 " {station:5s}{instrument:1s}{component:1s}{phase_info:10s}"
                 "{hour:2d}{minute:2d}{seconds:>6s}{coda:5s}{amp:7s}{period:5s}"
-                "{azimuth:6s}{velocity:5s}{ain:4s}{azimuthres:3s}{timeres:5s}"
-                "{finalweight:2s}{distance:5s}{caz:4s} ")
+                "{backazimuth:6s}{velocity:5s}{ain:4s}{backazimuthres:3s}"
+                "{timeres:5s}{finalweight:2s}{distance:5s}{caz:4s} ")
             # Note that pick seconds rounding only works because SEISAN does
             # not enforce that seconds stay 0 <= seconds < 60, so rounding
             # something like seconds = 59.997 to 2dp gets to 60.00, which
@@ -2089,23 +2336,23 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                 coda=_str_conv(coda).rjust(5)[0:5],
                 amp=_str_conv(amp, rounded=1).rjust(7)[0:7],
                 period=_str_conv(peri, rounded=peri_round).rjust(5)[0:5],
-                azimuth=_str_conv(azimuth).rjust(6)[0:6],
+                backazimuth=_str_conv(backazimuth).rjust(6)[0:6],
                 velocity=_str_conv(velocity).rjust(5)[0:5],
                 ain=ain[:-2].rjust(4)[0:4],
-                azimuthres=_str_conv(azimuthres).rjust(3)[0:3],
+                backazimuthres=_str_conv(backazimuthres).rjust(3)[0:3],
                 timeres=_str_conv(timeres, rounded=2).rjust(5)[0:5],
                 finalweight=finalweight, distance=distance.rjust(5)[0:5],
                 caz=_str_conv(caz).rjust(4)[0:4]))
-            # Note that currently angle of incidence is not supported. This is
-            # because obspy.event stores takeoff angle, which would require
-            # computation from the value stored in seisan. Multiple weights
-            # are also not supported in Obspy.event
+            # Nordic files contain an angle of incidence ("AIN") that is
+            # actually the takeoff angle from the source, and hence now
+            # properly supported as arrival.takeoff_angle.
         elif nordic_format == 'NEW':
             # Define par1, par2, & residual depending on type of observation:
             # Coda, backzimuth (add extra line), amplitude, or other phase pick
             add_amp_line = False
+            add_coda_line = False
             is_amp_pick = False
-            add_BAZ_line = False
+            add_baz_line = False
             par1 = '       '
             par2 = '      '
             residual = '     '
@@ -2118,29 +2365,44 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                                          ).rjust(5)[0:5]
             # Coda
             if coda.strip() != '':
-                par1 = _str_conv(coda).rjust(7)[0:7]  # coda duration
-                phase_hint = 'END'
-                impulsivity = ''
+                add_coda_line = True
+                coda_phase_hint = 'END'
+                coda_par1 = _str_conv(coda).rjust(7)[0:7]  # coda duration
+                coda_par2 = '      '
+                # TODO: magnitude residual for coda
+                coda_residual = '     '
+                # TODO: weight for coda
             # Back Azimuth
-            elif azimuth.strip() != '':  # back-azimuth
-                add_BAZ_line = True
+            if backazimuth.strip() != '':  # back-azimuth
+                add_baz_line = True
+                # If the BAZ-measurement is an extra pick in addition to the
+                # actual phase, then don't duplicate the BAZ-line. Instead,
+                # write the BAZ-pick into a single line.
+                if pick.phase_hint and pick.phase_hint.startswith('BAZ-'):
+                    add_baz_line = False
                 if len(phase_hint) <= 4:  # max total phase name length is 8
                     baz_phase_hint = 'BAZ-' + phase_hint
                 else:
                     baz_phase_hint = phase_hint
-                baz_par1 = _str_conv(azimuth, rounded=1).rjust(7)[0:7]
-                baz_par2 = _str_conv(
-                    velocity, rounded=2).rjust(6)[0:5].rjust(6)
+                baz_par1 = _str_conv(backazimuth, rounded=1).rjust(7)[0:7]
+                baz_par2 = _str_conv(velocity, rounded=2).rjust(6)[0:6]
                 baz_residual = '     '
                 baz_finalweight = '  '
-                if arrival.backazimuth_residual is not None:
-                    baz_residual = _str_conv(
-                        arrival.backazimuth_residual, rounded=1).rjust(5)[0:5]
-                if arrival.backazimuth_weight is not None:
-                    baz_finalweight = _str_conv(
-                        arrival.backazimuth_weight*10, rounded=0).rjust[2][0:2]
+                if arrival:
+                    if arrival.backazimuth_residual is not None:
+                        baz_residual = _str_conv(arrival.backazimuth_residual,
+                                                 rounded=1).rjust(5)[0:5]
+                    if arrival.backazimuth_weight is not None:
+                        baz_finalweight = _str_conv(
+                            arrival.backazimuth_weight*10,
+                            rounded=0).rjust[2][0:2]
+                if not add_baz_line:
+                    par1 = baz_par1
+                    par2 = baz_par2
+                    residual = baz_residual
+                    finalweight = baz_finalweight
             # Amplitude
-            elif amp is not None:
+            if amp is not None:
                 add_amp_line = True
                 # In New Nordic format, multiple amplitudes can now be associ-
                 # ated with one pick (e.g., measured at different periods)
@@ -2161,7 +2423,10 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                             mag_hint.upper() in ['AML', 'ML']):
                         amp_phase_hints.append('IAML')
                     else:
-                        amp_phase_hints.append('A')
+                        if amplitudes[j].type is not None:
+                            amp_phase_hints.append(amplitudes[j].type)
+                        else:  # Generic amplitude
+                            amp_phase_hints.append('A')
                     amp_eval_modes.append(' ' or INV_EVALUTATION_MAPPING.get(
                         amplitude.evaluation_mode, None))
                     amp_finalweights.append('  ')
@@ -2173,8 +2438,9 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     tr_mag = [
                         sta_mag for sta_mag in event.station_magnitudes
                         if (sta_mag.amplitude_id == amplitudes[j].resource_id
-                            and sta_mag.creation_info.agency_id
-                            == pick.creation_info.agency_id
+                            and (not sta_mag.creation_info or
+                                 sta_mag.creation_info.agency_id
+                                 == pick.creation_info.agency_id)
                             and sta_mag.station_magnitude_type
                             == amplitudes[j].magnitude_hint)]
                     amp_residuals.append('     ')
@@ -2215,6 +2481,19 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     finalweight=finalweight,
                     distance=distance.rjust(5)[0:5],
                     caz=_str_conv(caz).rjust(3)[0:3]))
+            if add_coda_line:
+                pick_strings.append(pick_string_formatter.format(
+                    station=pick.waveform_id.station_code,
+                    channel=channel_code, network=network_code,
+                    location=location_code, impulsivity=' ',
+                    phase_hint=coda_phase_hint.ljust(8)[0:8],
+                    weight=' ', eval_mode=coda_eval_mode,
+                    hour=pick_hour, minute=pick.time.minute,
+                    seconds=_str_conv(pick_seconds, rounded=3).rjust(6),
+                    par1=coda_par1, par2=coda_par2, agency=agency,
+                    author=author, ain='     ', residual=coda_residual,
+                    finalweight=' ', distance=distance.rjust(5)[0:5],
+                    caz=_str_conv(caz).rjust(3)[0:3]))
             if add_amp_line:
                 for j, amp in enumerate(amp_list):
                     pick_strings.append(pick_string_formatter.format(
@@ -2230,7 +2509,7 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                         finalweight=amp_finalweights[j],
                         distance=distance.rjust(5)[0:5],
                         caz=_str_conv(caz).rjust(3)[0:3]))
-            if add_BAZ_line:
+            if add_baz_line:
                 pick_strings.append(pick_string_formatter.format(
                     station=pick.waveform_id.station_code,
                     channel=channel_code, network=network_code,

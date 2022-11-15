@@ -238,7 +238,7 @@ def get_flags(files, starttime=None, endtime=None,
 
         msr = clibmseed.msr_init(C.POINTER(MSRecord)())
 
-        while(True):
+        while True:
             # Read up to max record length.
             record = bfr_np[offset: offset + 8192]
             if len(record) < 48:
@@ -834,7 +834,7 @@ def _ctypes_array_2_numpy_array(buffer_, buffer_elements, sampletype):
     """
     # Allocate NumPy array to move memory to
     numpy_array = np.empty(buffer_elements, dtype=sampletype)
-    datptr = numpy_array.ctypes.get_data()
+    datptr = numpy_array.ctypes.data
     # Manually copy the contents of the C allocated memory area to
     # the address of the previously created NumPy array
     C.memmove(datptr, buffer_, buffer_elements * SAMPLESIZES[sampletype])
@@ -924,7 +924,7 @@ def set_flags_in_fixed_headers(filename, flags):
     """
     Updates a given MiniSEED file with some fixed header flags.
 
-    :type filename: string
+    :type filename: str
     :param filename: Name of the MiniSEED file to be changed
     :type flags: dict
     :param flags: The flags to update in the MiniSEED file
@@ -1478,10 +1478,12 @@ def _convert_flags_to_raw_byte(expected_flags, user_flags, recstart, recend):
     compared to the expected_signals, and its value is converted to bool.
     Missing values are considered false.
 
-    :type expected_flags: dict {int: str}
-    :param expected_flags: every possible flag in this field, with its offset
-    :type user_flags: dict {str: bool}
-    :param user_flags: user defined flags and its value
+    :type expected_flags: dict
+    :param expected_flags: every possible flag in this field, with its offset.
+        Structure: {int: str}.
+    :type user_flags: dict
+    :param user_flags: user defined flags and its value.
+        Structure: {str: bool}.
     :type recstart: UTCDateTime
     :param recstart: date of the first sample of the current record
     :type recstart: UTCDateTime
@@ -1505,7 +1507,7 @@ def _convert_flags_to_raw_byte(expected_flags, user_flags, recstart, recend):
                     event_start = tuple_value[0]
                     event_end = tuple_value[1]
 
-                    if(event_start < recend) and (recstart <= event_end):
+                    if (event_start < recend) and (recstart <= event_end):
                         use_in_this_record = True
                         break
 

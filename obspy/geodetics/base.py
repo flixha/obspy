@@ -12,7 +12,6 @@ import math
 import warnings
 
 import numpy as np
-from scipy.stats import circmean
 
 from obspy.core.util.misc import to_int_or_zero
 
@@ -250,7 +249,7 @@ def gps2dist_azimuth(lat1, lon1, lat2, lon2, a=WGS84_A, f=WGS84_F):
         for converting between geographic, UTM, UPS, MGRS, and geocentric
         coordinates, for geoid calculations, and for solving geodesic problems.
         Otherwise the locally implemented Vincenty's Inverse formulae
-        (:func:`obspy.core.util.geodetics.calc_vincenty_inverse`) is used which
+        (:func:`obspy.geodetics.base.calc_vincenty_inverse`) is used which
         has known limitations for two nearly antipodal points and is ca. 4x
         slower.
     """
@@ -350,8 +349,8 @@ def locations2degrees(lat1, long1, lat2, long2):
     .. rubric:: Example
 
     >>> from obspy.geodetics import locations2degrees
-    >>> locations2degrees(5, 5, 10, 10)
-    7.0397014191753815
+    >>> locations2degrees(5, 5, 10, 10) # doctest: +ELLIPSIS
+    7.03970141917538...
     """
     # broadcast explicitly here so it raises once instead of somewhere in the
     # middle if things can't be broadcast
@@ -389,6 +388,7 @@ def mean_longitude(longitudes):
     :param longitudes: Geographical longitude values ranging from -180 to 180
         in degrees.
     """
+    from scipy.stats import circmean
     mean_longitude = circmean(np.array(longitudes), low=-180, high=180)
     mean_longitude = _normalize_longitude(mean_longitude)
     return mean_longitude
@@ -478,7 +478,7 @@ def inside_geobounds(obj, minlatitude=None, maxlatitude=None,
     if maxlongitude is not None:
         if olongitude is None or olongitude > maxlongitude:
             return False
-    if all([l is not None for l in
+    if all([coord is not None for coord in
            (latitude, longitude, olatitude, olongitude)]):
         distance = locations2degrees(latitude, longitude,
                                      olatitude, olongitude)

@@ -123,7 +123,7 @@ class RtTrace(Trace):
             string += '\n'
             string += '  ' + (str(key) + ' ' + 80 * '-')[:80]
             string += str(REALTIME_PROCESS_FUNCTIONS[key][0].__doc__)
-        return(string)
+        return string
 
     def __init__(self, max_length=None, *args, **kwargs):  # @UnusedVariable
         """
@@ -312,7 +312,7 @@ class RtTrace(Trace):
             or a non-recursive, time-domain NumPy or ObsPy function which takes
             a single array as an argument and returns an array
 
-        :type process: str or function
+        :type process: str or callable
         :param process: Specifies which processing function is added,
             e.g. ``"boxcar"`` or ``np.abs``` (functions without brackets).
             See :mod:`obspy.realtime.signal` for all predefined processing

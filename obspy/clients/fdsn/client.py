@@ -19,6 +19,7 @@ import textwrap
 import threading
 import warnings
 from collections import OrderedDict
+from http.client import HTTPException, IncompleteRead
 from urllib.parse import urlparse
 
 from lxml import etree
@@ -34,7 +35,10 @@ from .header import (DEFAULT_PARAMETERS, DEFAULT_USER_AGENT, FDSNWS,
                      FDSNTimeoutException,
                      FDSNNoAuthenticationServiceException,
                      FDSNBadRequestException, FDSNNoServiceException,
-                     FDSNInternalServerException, FDSNTooManyRequestsException,
+                     FDSNInternalServerException,
+                     FDSNNotImplementedException,
+                     FDSNBadGatewayException,
+                     FDSNTooManyRequestsException,
                      FDSNRequestTooLargeException,
                      FDSNServiceUnavailableException,
                      FDSNUnauthorizedException,
@@ -56,6 +60,7 @@ class CustomRedirectHandler(urllib_request.HTTPRedirectHandler):
     Custom redirection handler to also do it for POST requests which the
     standard library does not do by default.
     """
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         """
         Copied and modified from the standard library.
@@ -86,6 +91,7 @@ class NoRedirectionHandler(urllib_request.HTTPRedirectHandler):
     """
     Handler that does not direct!
     """
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         """
         Copied and modified from the standard library.
@@ -107,11 +113,13 @@ class Client(object):
     # Dictionary caching any discovered service. Therefore repeatedly
     # initializing a client with the same base URL is cheap.
     __service_discovery_cache = {}
-
+    #: Regex for UINT8
     RE_UINT8 = r'(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})'
+    #: Regex for HEX4
     RE_HEX4 = r'(?:[\d,a-f]{4}|[1-9,a-f][0-9,a-f]{0,2}|0)'
-
+    #: Regex for IPv4
     RE_IPv4 = r'(?:' + RE_UINT8 + r'(?:\.' + RE_UINT8 + r'){3})'
+    #: Regex for IPv6
     RE_IPv6 = \
         r'(?:\[' + RE_HEX4 + r'(?::' + RE_HEX4 + r'){7}\]' + \
         r'|\[(?:' + RE_HEX4 + r':){0,5}' + RE_HEX4 + r'::\]' + \
@@ -121,13 +129,13 @@ class Client(object):
         r'|\[' + RE_HEX4 + r':' + \
         r'(?:' + RE_HEX4 + r':|:' + RE_HEX4 + r'){0,4}' + \
         r':' + RE_HEX4 + r'\])'
-
+    #: Regex for checking the validity of URLs
     URL_REGEX = r'https?://' + \
                 r'(' + RE_IPv4 + \
                 r'|' + RE_IPv6 + \
                 r'|localhost' + \
-                r'|\w+' + \
-                r'|(?:\w(?:[\w-]{0,61}[\w])?\.){1,}([a-z]{2,6}))' + \
+                r'|\w(?:[\w-]*\w)?' + \
+                r'|(?:\w(?:[\w-]{0,61}[\w])?\.){1,}([a-z][a-z0-9-]{1,62}))' + \
                 r'(?::\d{2,5})?' + \
                 r'(/[\w\.-]+)*/?$'
 
@@ -231,7 +239,6 @@ class Client(object):
                       .format(base_url)
                 raise ValueError(msg)
             url_subpath = URL_DEFAULT_SUBPATH
-
         # Make sure the base_url does not end with a slash.
         base_url = base_url.strip("/")
         # Catch invalid URLs to avoid confusing error messages
@@ -417,7 +424,7 @@ class Client(object):
         >>> cat = client.get_events(eventid=609301)
         >>> print(cat)
         1 Event(s) in Catalog:
-        1997-10-14T09:53:11.070000Z | -22.145, -176.720 | 7.8 mw
+        1997-10-14T09:53:11.070000Z | -22.145, -176.720 | 7.8 ...
 
         The return value is a :class:`~obspy.core.event.Catalog` object
         which can contain any number of events.
@@ -428,9 +435,9 @@ class Client(object):
         ...                         catalog="ISC")
         >>> print(cat)
         3 Event(s) in Catalog:
-        2001-01-07T02:55:59.290000Z |  +9.801,  +76.548 | 4.9 mb
-        2001-01-07T02:35:35.170000Z | -21.291,  -68.308 | 4.4 mb
-        2001-01-07T00:09:25.630000Z | +22.946, -107.011 | 4.0 mb
+        2001-01-07T02:55:59.290000Z |  +9.801,  +76.548 | 4.9 ...
+        2001-01-07T02:35:35.170000Z | -21.291,  -68.308 | 4.4 ...
+        2001-01-07T00:09:25.630000Z | +22.946, -107.011 | 4.0 ...
 
         :type starttime: :class:`~obspy.core.utcdatetime.UTCDateTime`, optional
         :param starttime: Limit to events on or after the specified start time.
@@ -492,9 +499,9 @@ class Client(object):
             suggested to be the preferred magnitude only.
         :type includearrivals: bool, optional
         :param includearrivals: Specify if phase arrivals should be included.
-        :type eventid: str (or int, dependent on data center), optional
+        :type eventid: str or int, optional
         :param eventid: Select a specific event by ID; event identifiers are
-            data center specific.
+            data center specific (String or Integer).
         :type limit: int, optional
         :param limit: Limit the results to the specified number of events.
         :type offset: int, optional
@@ -991,7 +998,7 @@ class Client(object):
             information to each trace. This can be used to remove response
             using :meth:`~obspy.core.stream.Stream.remove_response`.
 
-        :type bulk: str, file or list of lists
+        :type bulk: str, file or list[list]
         :param bulk: Information about the requested data. See above for
             details.
         :type quality: str, optional
@@ -1085,7 +1092,7 @@ class Client(object):
         >>> print(inv)  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
         Inventory created at ...
             Created by: IRIS WEB SERVICE: fdsnws-station | version: ...
-                        ...
+
             Sending institution: IRIS-DMC (IRIS-DMC)
             Contains:
                 Networks (2):
@@ -1094,6 +1101,7 @@ class Client(object):
                     GR.GRA1 (GRAFENBERG ARRAY, BAYERN)
                     IU.ANMO (Albuquerque, New Mexico, USA)
                 Channels (0):
+
         >>> inv.plot()  # doctest: +SKIP
 
         .. plot::
@@ -1115,7 +1123,7 @@ class Client(object):
         >>> print(inv)  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
         Inventory created at ...
             Created by: IRIS WEB SERVICE: fdsnws-station | version: ...
-                        ...
+
             Sending institution: IRIS-DMC (IRIS-DMC)
             Contains:
                 Networks (2):
@@ -1144,7 +1152,7 @@ class Client(object):
                     GR.GRA1..BHE, GR.GRA1..BHN, GR.GRA1..BHZ, IU.ANMO.00.BHZ,
                     IU.ANMO.10.BHZ
 
-        :type bulk: str, file or list of lists
+        :type bulk: str, file or list[list]
         :param bulk: Information about the requested data. See above for
             details.
         :type level: str
@@ -1445,7 +1453,6 @@ class Client(object):
         if "event" in services:
             urls.append(self._build_url("event", "catalogs"))
             urls.append(self._build_url("event", "contributors"))
-
         # Access cache if available.
         url_hash = frozenset(urls)
         if url_hash in self.__service_discovery_cache:
@@ -1496,7 +1503,6 @@ class Client(object):
             thread.start()
         for thread in threads:
             thread.join(15)
-
         self.services = {}
 
         # Collect the redirection exceptions to be able to raise nicer
@@ -1564,7 +1570,6 @@ class Client(object):
                    "be due to a temporary service outage or an invalid FDSN "
                    "service address." % self.base_url)
             raise FDSNNoServiceException(msg)
-
         # Cache.
         if self.debug is True:
             print("Storing discovered services in cache.")
@@ -1768,6 +1773,12 @@ def raise_on_error(code, data):
     elif code == 500:
         raise FDSNInternalServerException("Service responds: Internal server "
                                           "error", server_info)
+    elif code == 501:
+        raise FDSNNotImplementedException("Service responds: Not implemented ",
+                                          server_info)
+    elif code == 502:
+        raise FDSNBadGatewayException("Service responds: Bad gateway ",
+                                      server_info)
     elif code == 503:
         raise FDSNServiceUnavailableException("Service temporarily "
                                               "unavailable",
@@ -1805,13 +1816,11 @@ def download_url(url, opener, timeout=10, headers={}, debug=False,
             print("-" * 70)
             print(data.decode())
             print("-" * 70)
-
     try:
         request = urllib_request.Request(url=url, headers=headers)
         # Request gzip encoding if desired.
         if use_gzip:
             request.add_header("Accept-encoding", "gzip")
-
         url_obj = opener.open(request, timeout=timeout, data=data)
     # Catch HTTP errors.
     except urllib_request.HTTPError as e:
@@ -1819,6 +1828,9 @@ def download_url(url, opener, timeout=10, headers={}, debug=False,
             msg = "HTTP error %i, reason %s, while downloading '%s': %s" % \
                   (e.code, str(e.reason), url, e.read())
             print(msg)
+        else:
+            # Without this line we will get unclosed sockets
+            e.read()
         return e.code, e
     except Exception as e:
         if debug is True:
@@ -1833,7 +1845,13 @@ def download_url(url, opener, timeout=10, headers={}, debug=False,
             print("Uncompressing gzipped response for %s" % url)
         # Cannot directly stream to gzip from urllib!
         # http://www.enricozini.org/2011/cazzeggio/python-gzip/
-        buf = io.BytesIO(url_obj.read())
+        try:
+            reader = url_obj.read()
+        except IncompleteRead:
+            msg = 'Problem retrieving data from datacenter. '
+            msg += 'Try reducing size of request.'
+            raise HTTPException(msg)
+        buf = io.BytesIO(reader)
         buf.seek(0, 0)
         f = gzip.GzipFile(fileobj=buf)
     else:

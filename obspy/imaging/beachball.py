@@ -22,15 +22,13 @@ Most source code provided here are adopted from
     GNU Lesser General Public License, Version 3
     (https://www.gnu.org/copyleft/lesser.html)
 
-.. _`Generic Mapping Tools (GMT)`: https://gmt.soest.hawaii.edu
+.. _`Generic Mapping Tools (GMT)`: https://www.generic-mapping-tools.org
 .. _`bb.m`: http://www.ceri.memphis.edu/people/olboyd/Software/Software.html
 """
 import io
 import warnings
 
 import numpy as np
-from matplotlib import path as mplpath
-from matplotlib import collections, patches, transforms
 from decorator import decorator
 
 
@@ -116,8 +114,9 @@ def beach(fm, linewidth=2, facecolor='b', bgcolor='w', edgecolor='k',
         the returned collection to the axes instance.
     """
     # check if one or two widths are specified (Circle or Ellipse)
+    from matplotlib import collections, transforms
     try:
-        assert(len(width) == 2)
+        assert len(width) == 2
     except TypeError:
         width = (width, width)
     mt = None
@@ -288,11 +287,12 @@ def plot_mt(T, N, P, size=200, plot_zerotrace=True,  # noqa
 
     Adapted from ps_tensor / utilmeca.c / `Generic Mapping Tools (GMT)`_.
 
-    .. _`Generic Mapping Tools (GMT)`: https://gmt.soest.hawaii.edu
+    .. _`Generic Mapping Tools (GMT)`: https://www.generic-mapping-tools.org
     """
     # check if one or two widths are specified (Circle or Ellipse)
+    from matplotlib import patches
     try:
-        assert(len(width) == 2)
+        assert len(width) == 2
     except TypeError:
         width = (width, width)
     collect = []
@@ -612,7 +612,7 @@ def plot_dc(np1, size=200, xy=(0, 0), width=200):
     """
     # check if one or two widths are specified (Circle or Ellipse)
     try:
-        assert(len(width) == 2)
+        assert len(width) == 2
     except TypeError:
         width = (width, width)
     s_1 = np1.strike
@@ -692,8 +692,10 @@ def plot_dc(np1, size=200, xy=(0, 0), width=200):
 
 def xy2patch(x, y, res, xy):
     # check if one or two resolutions are specified (Circle or Ellipse)
+    from matplotlib import path as mplpath
+    from matplotlib import patches
     try:
-        assert(len(res) == 2)
+        assert len(res) == 2
     except TypeError:
         res = (res, res)
     # transform into the Path coordinate system
@@ -911,7 +913,7 @@ def mt2axes(mt):
     :return: tuple of :class:`~PrincipalAxis` T, N and P
 
     Adapted from ps_tensor / utilmeca.c /
-    `Generic Mapping Tools (GMT) <https://gmt.soest.hawaii.edu>`_.
+    `Generic Mapping Tools (GMT) <https://www.generic-mapping-tools.org>`_.
     """
     (d, v) = np.linalg.eigh(mt.mt)
     pl = np.arcsin(-v[0])

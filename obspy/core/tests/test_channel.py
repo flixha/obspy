@@ -9,44 +9,27 @@ Test suite for the channel handling.
     GNU Lesser General Public License, Version 3
     (https://www.gnu.org/copyleft/lesser.html)
 """
-import inspect
-import os
-import unittest
-import warnings
-
-import numpy as np
+import pytest
 from matplotlib import rcParams
 
-from obspy.core.util.testing import ImageComparison
 from obspy import read_inventory
 from obspy.core.inventory import Channel, Equipment
+from obspy.core.util.testing import WarningsCapture
 
 
-class ChannelTestCase(unittest.TestCase):
+@pytest.mark.usefixtures('ignore_numpy_errors')
+class TestChannel:
     """
     Tests the for :class:`~obspy.core.inventory.channel.Channel` class.
     """
-    def setUp(self):
-        # Most generic way to get the actual data directory.
-        self.data_dir = os.path.join(os.path.dirname(os.path.abspath(
-            inspect.getfile(inspect.currentframe()))), "data")
-        self.image_dir = os.path.join(os.path.dirname(__file__), 'images')
-        self.nperr = np.geterr()
-        np.seterr(all='ignore')
-
-    def tearDown(self):
-        np.seterr(**self.nperr)
-
-    def test_response_plot(self):
+    def test_response_plot(self, image_path):
         """
         Tests the response plot.
         """
         cha = read_inventory()[0][0][0]
-        with warnings.catch_warnings(record=True):
-            warnings.simplefilter("ignore")
-            with ImageComparison(self.image_dir, "channel_response.png") as ic:
-                rcParams['savefig.dpi'] = 72
-                cha.plot(0.005, outfile=ic.name)
+        with WarningsCapture():
+            rcParams['savefig.dpi'] = 72
+            cha.plot(0.005, outfile=image_path)
 
     def test_channel_str(self):
         """
@@ -57,7 +40,7 @@ class ChannelTestCase(unittest.TestCase):
         assert str(c) == (
             "Channel 'BHE', Location '10' \n"
             "\tTime range: -- - --\n"
-            "\tLatitude: 1.00, Longitude: 2.00, Elevation: 3.0 m, "
+            "\tLatitude: 1.0000, Longitude: 2.0000, Elevation: 3.0 m, "
             "Local Depth: 4.0 m\n"
             "\tAzimuth: 5.00 degrees from north, clockwise\n"
             "\tDip: 6.00 degrees down from horizontal\n")
@@ -67,7 +50,7 @@ class ChannelTestCase(unittest.TestCase):
         assert str(c) == (
             "Channel 'BHE', Location '10' \n"
             "\tTime range: -- - --\n"
-            "\tLatitude: 1.00, Longitude: 2.00, Elevation: 3.0 m, "
+            "\tLatitude: 1.0000, Longitude: 2.0000, Elevation: 3.0 m, "
             "Local Depth: 4.0 m\n"
             "\tAzimuth: 5.00 degrees from north, clockwise\n"
             "\tDip: 6.00 degrees down from horizontal\n"
@@ -78,7 +61,7 @@ class ChannelTestCase(unittest.TestCase):
         assert str(c) == (
             "Channel 'BHE', Location '10' \n"
             "\tTime range: -- - --\n"
-            "\tLatitude: 1.00, Longitude: 2.00, Elevation: 3.0 m, "
+            "\tLatitude: 1.0000, Longitude: 2.0000, Elevation: 3.0 m, "
             "Local Depth: 4.0 m\n"
             "\tAzimuth: 5.00 degrees from north, clockwise\n"
             "\tDip: 6.00 degrees down from horizontal\n"
@@ -90,7 +73,7 @@ class ChannelTestCase(unittest.TestCase):
         assert str(c) == (
             "Channel 'BHE', Location '10' \n"
             "\tTime range: -- - --\n"
-            "\tLatitude: 1.00, Longitude: 2.00, Elevation: 3.0 m, "
+            "\tLatitude: 1.0000, Longitude: 2.0000, Elevation: 3.0 m, "
             "Local Depth: 4.0 m\n"
             "\tAzimuth: 5.00 degrees from north, clockwise\n"
             "\tDip: 6.00 degrees down from horizontal\n"
@@ -104,7 +87,7 @@ class ChannelTestCase(unittest.TestCase):
         assert str(c) == (
             "Channel 'BHE', Location '10' \n"
             "\tTime range: -- - --\n"
-            "\tLatitude: 1.00, Longitude: 2.00, Elevation: 3.0 m, "
+            "\tLatitude: 1.0000, Longitude: 2.0000, Elevation: 3.0 m, "
             "Local Depth: 4.0 m\n"
             "\tAzimuth: 5.00 degrees from north, clockwise\n"
             "\tDip: 6.00 degrees down from horizontal\n"
@@ -119,7 +102,7 @@ class ChannelTestCase(unittest.TestCase):
         assert str(c) == (
             "Channel 'BHE', Location '10' \n"
             "\tTime range: -- - --\n"
-            "\tLatitude: 1.00, Longitude: 2.00, Elevation: 3.0 m, "
+            "\tLatitude: 1.0000, Longitude: 2.0000, Elevation: 3.0 m, "
             "Local Depth: 4.0 m\n"
             "\tAzimuth: 5.00 degrees from north, clockwise\n"
             "\tDip: 6.00 degrees down from horizontal\n"
@@ -134,7 +117,7 @@ class ChannelTestCase(unittest.TestCase):
         assert str(c) == (
             "Channel 'BHE', Location '10' \n"
             "\tTime range: -- - --\n"
-            "\tLatitude: 1.00, Longitude: 2.00, Elevation: 3.0 m, "
+            "\tLatitude: 1.0000, Longitude: 2.0000, Elevation: 3.0 m, "
             "Local Depth: 4.0 m\n"
             "\tAzimuth: 5.00 degrees from north, clockwise\n"
             "\tDip: 6.00 degrees down from horizontal\n"
@@ -149,7 +132,7 @@ class ChannelTestCase(unittest.TestCase):
         assert str(c) == (
             "Channel 'BHE', Location '10' \n"
             "\tTime range: -- - --\n"
-            "\tLatitude: 1.00, Longitude: 2.00, Elevation: 3.0 m, "
+            "\tLatitude: 1.0000, Longitude: 2.0000, Elevation: 3.0 m, "
             "Local Depth: 4.0 m\n"
             "\tAzimuth: 5.00 degrees from north, clockwise\n"
             "\tDip: 6.00 degrees down from horizontal\n"
@@ -158,11 +141,3 @@ class ChannelTestCase(unittest.TestCase):
             "\tSensor (Description): random (some description)\n"
             "\tResponse information available"
         )
-
-
-def suite():
-    return unittest.makeSuite(ChannelTestCase, 'test')
-
-
-if __name__ == '__main__':
-    unittest.main(defaultTest='suite')

@@ -10,23 +10,30 @@ Functions to compute and plot radiation patterns
     The ObsPy Development Team (devs@obspy.org)
 :license:
     GNU Lesser General Public License, Version 3
-    (http://www.gnu.org/copyleft/lesser.html)
+    (https://www.gnu.org/copyleft/lesser.html)
 """
 
 import numpy as np
-from matplotlib.cm import get_cmap
+
+from itertools import chain
 
 from obspy.core.event.source import farfield
 from obspy.imaging.scripts.mopad import MomentTensor, BeachBall
 from obspy.imaging.mopad_wrapper import beach
+from obspy.core.util import CARTOPY_VERSION
+if CARTOPY_VERSION:
+    HAS_CARTOPY = True
+else:
+    HAS_CARTOPY = False
 
 
-def _setup_figure_and_axes(kind, fig=None, subplot_size=4.0):
+def _setup_figure_and_axes(kind, fig=None, subplot_size=4.0, **kwargs):
     """
     Setup figure for Event plot.
 
     :param kind: A list of strings or nested list of strings, see
         :meth:`obspy.core.event.event.Event.plot`.
+    :type kind: list[str] or list[list[str]]
     :type subplot_size: float
     :param subplot_size: Width/height of one single subplot cell in inches.
     :rtype: tuple
@@ -57,11 +64,41 @@ def _setup_figure_and_axes(kind, fig=None, subplot_size=4.0):
         ncols_ = len(row)
         for j, kind__ in enumerate(row):
             kind_.append(kind__)
-            kwargs = {"adjustable": "datalim"}
+            kwargs["adjustable"] = "datalim"
             if kind__ in ("p_quiver", "p_sphere", "s_quiver", "s_sphere"):
                 kwargs["projection"] = "3d"
-            else:  # equal aspect never worked on 3d plot, see mpl #13474
+                kwargs["aspect"] = "auto"
+            if kind__ in ("ortho", "local", "global"):
+                import cartopy.crs as ccrs
+                lats = []
+                lons = []
+                if "events" in kwargs:
+                    _cat = kwargs.pop("events")
+                    for event in _cat:
+                        origin = event.preferred_origin() or event.origins[0]
+                        lats.append(origin.latitude)
+                        lons.append(origin.longitude)
+                    lat_0 = round(np.mean(lats), 4)
+                    lon_0 = round(np.mean(lons), 4)
+                else:
+                    lat_0 = 0.0
+                    lon_0 = 0.0
+                if kind__ == "ortho":
+                    kwargs["projection"] = ccrs.Orthographic(
+                        central_longitude=lon_0,
+                        central_latitude=lat_0)
+                elif kind__ == "global":
+                    kwargs["projection"] = ccrs.Mollweide(
+                        central_longitude=lon_0
+                    )
+                else:
+                    kwargs["projection"] = ccrs.AlbersEqualArea(
+                        central_longitude=lon_0,
+                        central_latitude=lat_0
+                    )
                 kwargs["aspect"] = "equal"
+            else:  # equal aspect never worked on 3d plot, see mpl #13474
+                kwargs["aspect"] = "auto"
             ax = fig.add_subplot(nrows, ncols_, i * ncols_ + j + 1, **kwargs)
             axes.append(ax)
     return fig, axes, kind_
@@ -128,8 +165,14 @@ def plot_radiation_pattern(
 
     # matplotlib plotting is triggered when kind is a list of strings
     if isinstance(kind, (list, tuple)):
-        fig, axes, kind = _setup_figure_and_axes(kind, fig=fig)
-
+        if not fig:
+            fig, axes, kind = _setup_figure_and_axes(kind, fig=fig)
+        else:
+            axes = fig.axes
+            if len(kind) == 1:
+                kind = kind
+            else:
+                kind = list(chain(*kind))
         for ax, kind_ in zip(axes, kind):
             if kind_ is None:
                 continue
@@ -149,7 +192,8 @@ def plot_radiation_pattern(
                 ax.spines['bottom'].set_position('center')
                 ax.spines['top'].set_color('none')
                 _plot_beachball(ax, rtp_mt)
-
+        # see https://github.com/SciTools/cartopy/issues/1207
+        fig.canvas.draw()
         fig.tight_layout(pad=0.1)
         if show:
             plt.show()
@@ -186,6 +230,7 @@ def _plot_radiation_pattern_sphere(
     :param type: 'P' or 'S' (P or S wave).
     """
     import matplotlib.pyplot as plt
+    from matplotlib.cm import get_cmap
     type = type.upper()
     if type not in ("P", "S"):
         msg = ("type must be 'P' or 'S'")
@@ -267,6 +312,7 @@ def _plot_radiation_pattern_quiver(ax3d, ned_mt, type):
     :param type: 'P' or 'S' (P or S wave).
     """
     import matplotlib.pyplot as plt
+    from matplotlib.cm import get_cmap
 
     type = type.upper()
     if type not in ("P", "S"):
@@ -325,6 +371,7 @@ def _plot_beachball(ax2d, rtp_mt):
     :param rtp_mt: moment tensor in RTP convention
     """
     import matplotlib.pyplot as plt
+    from matplotlib.cm import get_cmap
     norm = plt.Normalize(-1., 1.)
     cmap = get_cmap('bwr')
     bball = beach(rtp_mt, xy=(0, 0), width=50, facecolor=cmap(norm(0.7)),

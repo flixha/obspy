@@ -3,7 +3,9 @@ Alexeev, Nicholas
 Allgeyer, Sebastien
 Ammon, Charles J.
 Antunes, Emanuel
+Armbruster, Daniel
 Arnarsson, Ólafur St.
+Assink, Jelle
 Bagagli, Matteo
 Bank, Markus
 Barsch, Robert
@@ -12,8 +14,10 @@ Bernardi, Fabrizio
 Bernauer, Felix
 Bes de Berc, Maxime
 Beyreuther, Moritz
+Bloch, Wasja
 Boltz, Shawn
 Bonaimé, Sébastien
+Buist, Jan Willem
 Carapetis, Anthony
 Carothers, Lloyd
 Chamberlain, Calum
@@ -72,24 +76,29 @@ Megies, Tobias
 Meschede, Matthias
 Michelini, Alberto
 Miller, Nathaniel C.
+Mizuno, Naoto
 Morgenstern, Bernhard
 Münchmeyer, Jannes
 Murray-Bergquist, Louisa
 Nesbitt, Ian M.
 Nof, Ran Novitsky
 Panning, Mark P.
-Rapagnani, Giovanni
 Parker, Tom
 Pestourie, Romain
+Pickle, Robert
 Pourpoint, Maeva
+Rapagnani, Giovanni
 Reyes, Celso
 Ringler, Adam
 Rothenhäusler, Nicolas
+Rudge, John F.
 Russo, Emiliano
+Russell, Stuart
 Sales de Andrade, Elliott
 Satriano, Claudio
 Saul, Joachim
 Scarabello, Luca
+Schaeffer, Jonathan
 Scheingraber, Chris
 Schneider, Felix M.
 Schneider, Simon
@@ -103,12 +112,14 @@ Tian, Dongdong
 Trabant, Chad
 Trani, Luca
 Uieda, Leonardo
+Ulianych, Danylo
 Walker, Andrew
 Walther, Marcus
 Wang, Yinzhi
 Wassermann, Joachim
 van Wijk, Kasper
 Williams, Mark C.
+Winder, Tom
 Winkelman, Andrew
 Zaccarelli, Riccardo
 Zad, Seyed Kasra Hosseini

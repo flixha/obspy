@@ -1,6 +1,6 @@
-=======================
-ObsPy Library Reference
-=======================
+============
+API Overview
+============
 
 ObsPy's functionality is provided through the following packages.
 
@@ -15,7 +15,6 @@ categories.*
     :nosignatures:
 
     obspy.core
-    obspy.db
     obspy.geodetics
     obspy.imaging
     obspy.realtime
@@ -37,7 +36,6 @@ categories.*
     obspy.scripts.reftekrescue
     obspy.scripts.print
     obspy.scripts.sds_html_report
-    obspy.db.scripts.indexer
     obspy.imaging.scripts.scan
     obspy.imaging.scripts.plot
     obspy.imaging.scripts.mopad
@@ -55,7 +53,6 @@ categories.*
     :toctree: .
     :nosignatures:
 
-    obspy.clients.arclink
     obspy.clients.earthworm
     obspy.clients.fdsn
     obspy.clients.filesystem
@@ -63,7 +60,6 @@ categories.*
     obspy.clients.neic
     obspy.clients.nrl
     obspy.clients.seedlink
-    obspy.clients.seishub
     obspy.clients.syngine
 
 
@@ -143,6 +139,7 @@ categories.*
     obspy.io.kml
     obspy.io.ndk
     obspy.io.nied.fnetmt
+    obspy.io.nied.knet
     obspy.io.nlloc
     obspy.io.nordic
     obspy.io.pde
@@ -176,7 +173,6 @@ categories.*
     :toctree: .
     :nosignatures:
 
-    obspy.io.arclink
     obspy.io.css
     obspy.io.kml
     obspy.io.sac.sacpz

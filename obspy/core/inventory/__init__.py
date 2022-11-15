@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-obspy.core.inventory - Classes for handling station metadata
-============================================================
+Module for handling station metadata
+
 This module provides a class hierarchy to consistently handle station metadata.
 This class hierarchy is closely modelled after the upcoming de-facto standard
 format `FDSN StationXML <https://www.fdsn.org/xml/station/>`_ which was
@@ -81,21 +81,22 @@ Station RJOB (Jochberg, Bavaria, BW-Net)
     Channel Count: None/None (Selected/Total)
     2007-12-17T00:00:00.000000Z -
     Access: None
-    Latitude: 47.74, Longitude: 12.80, Elevation: 860.0 m
+    Latitude: 47.7372, Longitude: 12.7957, Elevation: 860.0 m
     Available Channels:
-        RJOB..EHZ, RJOB..EHN, RJOB..EHE
+     ..EH[ZNE]   200.0 Hz  2007-12-17 to None
+
 
 >>> cha = sta[0]
 >>> print(cha)  # doctest: +NORMALIZE_WHITESPACE
 Channel 'EHZ', Location ''
-   Time range: 2007-12-17T00:00:00.000000Z - --
-   Latitude: 47.74, Longitude: 12.80, Elevation: 860.0 m, Local Depth: 0.0 m
-   Azimuth: 0.00 degrees from north, clockwise
-   Dip: -90.00 degrees down from horizontal
-   Channel types: TRIGGERED, GEOPHYSICAL
-   Sampling Rate: 200.00 Hz
-   Sensor (Description): Streckeisen STS-2/N seismometer (None)
-   Response information available
+    Time range: 2007-12-17T00:00:00.000000Z - --
+    Latitude: 47.7372, Longitude: 12.7957, Elevation: 860.0 m, Local Depth: 0.0 m
+    Azimuth: 0.00 degrees from north, clockwise
+    Dip: -90.00 degrees down from horizontal
+    Channel types: TRIGGERED, GEOPHYSICAL
+    Sampling Rate: 200.00 Hz
+    Sensor (Description): Streckeisen STS-2/N seismometer (None)
+    Response information available
 
 >>> print(cha.response)  # doctest: +NORMALIZE_WHITESPACE +ELLIPSIS
 Channel Response

@@ -3,26 +3,22 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  # obspy
+  - decorator
+  - lxml
+  - matplotlib
   - numpy
   - scipy
-  - matplotlib>3.2.0
-  - basemap>=1.2.1
-  - pip
-  - pyproj
-  - proj4
-  - codecov
-  - coverage
-  - certifi>=2017.4.17
-  - decorator
-  - docopt
-  - future
-  - jsonschema
-  - lxml
-  - mock
-  - nose
   - requests
+  - setuptools
   - sqlalchemy
-  - cryptography
-  - pip:
-      - pyimgur
-      - -e..
+  # soft dependencies
+  - cartopy
+  - geographiclib
+  - pyshp
+  # tests
+  - packaging
+  - pyproj
+  - pytest
+  - pytest-cov
+  - pytest-json-report >= 1.4

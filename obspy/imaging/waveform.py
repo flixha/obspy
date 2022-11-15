@@ -16,9 +16,10 @@ Waveform plotting for obspy.Stream objects.
     GNU Lesser General Public License, Version 3
     (https://www.gnu.org/copyleft/lesser.html)
 """
-import io
-import warnings
 import functools
+import io
+import os
+import warnings
 from copy import copy
 from datetime import datetime
 
@@ -219,6 +220,15 @@ class WaveformPlotting(object):
         Destructor closes the figure instance if it has been created by the
         class.
         """
+        # this garbage collector quick n dirty fix causes things like st.plot()
+        # in plot directive code for images in the docs to not appear anymore,
+        # because apparently newer sphinx looks for still active Figure objects
+        # *after* running the code and ignores figures that get shown *during*
+        # running the code, so for now add more magic that prevents garbage
+        # collection of figures here, when in CI (detected by env variable set
+        # by github actions) see #3036
+        if os.environ.get('CI') == 'true':
+            return
         import matplotlib.pyplot as plt
         if self.kwargs.get('fig', None) is None and \
                 not self.kwargs.get('handle'):
@@ -750,7 +760,7 @@ class WaveformPlotting(object):
             max_ = data.max(axis=1) * tr.stats.calib
             # Calculate extreme_values and put them into new array.
             if remaining_samples:
-                extreme_values = np.empty((pixel_count + 1, 2), dtype=np.float)
+                extreme_values = np.empty((pixel_count + 1, 2), dtype=float)
                 extreme_values[:-1, 0] = min_
                 extreme_values[:-1, 1] = max_
                 extreme_values[-1, 0] = \
@@ -758,7 +768,7 @@ class WaveformPlotting(object):
                 extreme_values[-1, 1] = \
                     tr.data[-remaining_samples:].max() * tr.stats.calib
             else:
-                extreme_values = np.empty((pixel_count, 2), dtype=np.float)
+                extreme_values = np.empty((pixel_count, 2), dtype=float)
                 extreme_values[:, 0] = min_
                 extreme_values[:, 1] = max_
             # Finally plot the data.
@@ -910,7 +920,7 @@ class WaveformPlotting(object):
         It will also convert all values to floats.
         """
         # Convert to native floats.
-        self.extreme_values = self.extreme_values.astype(np.float) * \
+        self.extreme_values = self.extreme_values.astype(float) * \
             self.stream[0].stats.calib
         # Make sure that the mean value is at 0
         # raises underflow warning / error for numpy 1.9
@@ -1001,7 +1011,7 @@ class WaveformPlotting(object):
         if not count:
             # Up to 15 time units and if it's a full number, show every unit.
             if time_value <= 15 and time_value % 1 == 0:
-                count = time_value
+                count = int(time_value)
             # Otherwise determine whether they are divisible for numbers up to
             # 15. If a number is not divisible just show 10 units.
             else:
@@ -1034,11 +1044,11 @@ class WaveformPlotting(object):
         # is set.
         if intervals <= 5 or self.one_tick_per_line:
             tick_steps = list(range(0, intervals))
-            ticks = np.arange(intervals, 0, -1, dtype=np.float)
+            ticks = np.arange(intervals, 0, -1, dtype=float)
             ticks -= 0.5
         else:
             tick_steps = list(range(0, intervals, self.repeat))
-            ticks = np.arange(intervals, 0, -1 * self.repeat, dtype=np.float)
+            ticks = np.arange(intervals, 0, -1 * self.repeat, dtype=float)
             ticks -= 0.5
 
         # Complicated way to calculate the label of
@@ -1186,15 +1196,22 @@ class WaveformPlotting(object):
                     'coordinates and ev_coord. See documentation.'
                 raise ValueError(msg)
         # Define minimum and maximum offsets
-        if self.sect_offset_min is None:
-            self._offset_min = self._tr_offsets.min()
+        if (self.sect_offset_min is None and self.sect_offset_max is None
+                and len(self._tr_offsets) == 1):
+            # avoid flatline in case of a single trace and no custom offsets
+            # specified
+            self._offset_min = self._tr_offsets[0] * 0.8
+            self._offset_max = self._tr_offsets[0] * 1.2
         else:
-            self._offset_min = self.sect_offset_min
+            if self.sect_offset_min is None:
+                self._offset_min = self._tr_offsets.min()
+            else:
+                self._offset_min = self.sect_offset_min
+            if self.sect_offset_max is None:
+                self._offset_max = self._tr_offsets.max()
+            else:
+                self._offset_max = self.sect_offset_max
 
-        if self.sect_offset_max is None:
-            self._offset_max = self._tr_offsets.max()
-        else:
-            self._offset_max = self.sect_offset_max
         # Reduce data to indexes within offset_min/max
         mask = ((self._tr_offsets >= self._offset_min) &
                 (self._tr_offsets <= self._offset_max))

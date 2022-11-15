@@ -18,7 +18,7 @@ from math import pi
 import warnings
 
 import numpy as np
-import scipy.interpolate
+import scipy
 
 from .. import compatibility
 from obspy.core.util.base import ComparingObject
@@ -177,7 +177,11 @@ class ResponseStage(ComparingObject):
     def _repr_pretty_(self, p, cycle):
         p.text(str(self))
 
-    def get_response(self, frequencies):
+    def get_response(self, frequencies, **kwargs):
+        """
+        :param frequencies: Frequency range to get resp curve over
+        :return: The curve describing this response stage
+        """
         # if a response stage isn't a subclass then it's likely a gain stage.
         return np.ones_like(frequencies) * self.stage_gain
 
@@ -205,9 +209,9 @@ class PolesZerosResponseStage(ResponseStage):
     :type normalization_frequency: float
     :param normalization_frequency: The frequency at which the normalization
         factor is normalized.
-    :type zeros: list of complex
+    :type zeros: list[complex]
     :param zeros: All zeros of the stage.
-    :type poles: list of complex
+    :type poles: list[complex]
     :param poles: All poles of the stage.
     :type normalization_factor: float, optional
     :param normalization_factor:
@@ -344,16 +348,19 @@ class PolesZerosResponseStage(ResponseStage):
         """
         # Has to be imported here for now to avoid circular imports.
         from obspy.signal.invsim import paz_to_freq_resp
+        from obspy.signal.util import next_pow_2
         if len(frequencies) > 10000 and fast:
             resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
                                            10000, dtype=np.float64)
         else:
             resp_frequencies = frequencies
 
+        n_freq = len(resp_frequencies)
+        nfft = next_pow_2(2 * n_freq)
         resp = paz_to_freq_resp(
             poles=np.array(self._poles, dtype=np.complex128),
             zeros=np.array(self._zeros, dtype=np.complex128),
-            scale_fac=self.normalization_factor,
+            scale_fac=self.normalization_factor, nfft=nfft,
             frequencies=resp_frequencies, freq=False) * self.stage_gain
 
         # If required, do interpolation of amplitude and phase of the response
@@ -369,7 +376,6 @@ class PolesZerosResponseStage(ResponseStage):
             final_resp.imag = amp * np.sin(phase)
         else:
             final_resp = resp
-
         return final_resp
 
     def calc_normalization_factor(self):
@@ -425,10 +431,10 @@ class CoefficientsTypeResponseStage(ResponseStage):
 
         The function tries to match inputs to one of three types if it can.
     :type numerator: list of
-        :class:`~obspy.core.util.obspy_types.CoefficientWithUncertainties`
+        :class:`~obspy.core.inventory.response.CoefficientWithUncertainties`
     :param numerator: Numerator of the coefficient response stage.
     :type denominator: list of
-        :class:`~obspy.core.util.obspy_types.CoefficientWithUncertainties`
+        :class:`~obspy.core.inventory.response.CoefficientWithUncertainties`
     :param denominator: Denominator of the coefficient response stage.
     """
     def __init__(self, stage_sequence_number, stage_gain,
@@ -628,7 +634,6 @@ class CoefficientsTypeResponseStage(ResponseStage):
         # evalresp does this and thus so do we.
         if self.cf_transfer_function_type != 'DIGITAL':
             amp *= self.stage_gain / gain_freq_amp
-        
         # If "fast", then interpolate the amplitude and phase onto the
         # originally requested frequencies.
         if len(frequencies) > 10000 and fast:
@@ -750,7 +755,7 @@ class FIRResponseStage(ResponseStage):
             * ``EVEN``
             * ``ODD``
 
-    :type coefficients: list of floats
+    :type coefficients: list[float]
     :param coefficients: List of FIR coefficients.
     """
     def __init__(self, stage_sequence_number, stage_gain,
@@ -868,7 +873,7 @@ class PolynomialResponseStage(ResponseStage):
     :param approximation_upper_bound: Upper bound of approximation.
     :type maximum_error: float
     :param maximum_error: Maximum error.
-    :type coefficients: list of floats
+    :type coefficients: list[float]
     :param coefficients: List of polynomial coefficients.
     """
     def __init__(self, stage_sequence_number, stage_gain,
@@ -966,7 +971,8 @@ class Response(ComparingObject):
     """
     # The various types of units.
     core_unit_enum = Enum(["displacement", "velocity", "acceleration",
-                           "volts", "counts", "tesla", "pressure"])
+                           "volts", "counts", "tesla", "pressure",
+                           "temperature"])
 
     def __init__(self, resource_id=None, instrument_sensitivity=None,
                  instrument_polynomial=None, response_stages=None):
@@ -1048,11 +1054,14 @@ class Response(ComparingObject):
             return self.core_unit_enum.tesla
         elif unit in ("PA", "MBAR"):
             return self.core_unit_enum.pressure
+        elif unit in ("CELSIUS",):
+            return self.core_unit_enum.temperature
         else:
             raise ValueError("Unknown unit '%s'." % unit)
 
     def get_response_for_window_size(self, t_samp, nfft, output="VEL",
-                                     start_stage=None, end_stage=None):
+                                     start_stage=None, end_stage=None,
+                                     fast=True):
         """
         Returns frequency response and corresponding frequencies for
         the given sample rate delta and FFT window size
@@ -1090,7 +1099,8 @@ class Response(ComparingObject):
             freqs = np.linspace(0, fy, int(nfft // 2) + 1).astype(np.float64)
 
         response = self.get_response(
-            freqs, output=output, start_stage=start_stage, end_stage=end_stage)
+            freqs, output=output, start_stage=start_stage, end_stage=end_stage,
+            fast=fast)
         return response, freqs
 
     def get_response(self, frequencies, output="velocity", start_stage=None,
@@ -1155,11 +1165,12 @@ class Response(ComparingObject):
             stages = self.response_stages[slice(start_stage, end_stage)]
             ref = stages[0].get_response(frequencies=f, fast=fast)
             for stage in stages[1:]:
-                ref *= stage.get_response(frequencies=f, fast=fast)
+                ref = ref * stage.get_response(frequencies=f, fast=fast)
             resp *= self.instrument_sensitivity.value / np.abs(ref[0])
 
         # By now the response is in the input units of the first stage.
         diff_and_int_map = {
+            # Displacement -> velocity - acceleration.
             self.core_unit_enum.displacement: 0,
             self.core_unit_enum.velocity: 1,
             self.core_unit_enum.acceleration: 2}
@@ -1469,6 +1480,12 @@ class Response(ComparingObject):
                 velocity, output unit is meters/second
             ``"ACC"``
                 acceleration, output unit is meters/second**2
+            ``"DEF"``
+                default units, the response is calculated in
+                output units/input units (last stage/first stage).
+                Useful if the units for a particular type of sensor (e.g., a
+                pressure sensor) cannot be converted to displacement, velocity
+                or acceleration.
 
         :type frequency: float
         :param frequency: Frequency to calculate overall sensitivity for in
@@ -1494,7 +1511,7 @@ class Response(ComparingObject):
 
         Also returns the overall sensitivity frequency and its gain.
 
-        :type frequencies: list of float
+        :type frequencies: list[float]
         :param frequencies: Discrete frequencies to calculate response for.
         :type output: str
         :param output: Output units. One of:
@@ -1505,6 +1522,12 @@ class Response(ComparingObject):
                 velocity, output unit is meters/second
             ``"ACC"``
                 acceleration, output unit is meters/second**2
+            ``"DEF"``
+                default units, the response is calculated in
+                output units/input units (last stage/first stage).
+                Useful if the units for a particular type of sensor (e.g., a
+                pressure sensor) cannot be converted to displacement, velocity
+                or acceleration.
 
         :type start_stage: int, optional
         :param start_stage: Stage sequence number of first stage that will be
@@ -1515,7 +1538,7 @@ class Response(ComparingObject):
         :type hide_sensitivity_mismatch_warning: bool
         :param hide_sensitivity_mismatch_warning: Hide the evalresp warning
             that computed and reported sensitivities don't match.
-        :rtype: :tuple: ( :class:`numpy.ndarray`, chan )
+        :rtype: tuple(:class:`numpy.ndarray`, chan)
         :returns: frequency response at requested frequencies
         """
         if not self.response_stages:
@@ -1523,13 +1546,14 @@ class Response(ComparingObject):
                    "stages.")
             raise ObsPyException(msg)
 
+        import scipy.interpolate
         import obspy.signal.evrespwrapper as ew
         from obspy.signal.headers import clibevresp
 
         out_units = output.upper()
-        if out_units not in ("DISP", "VEL", "ACC"):
+        if out_units not in ("DISP", "VEL", "ACC", "DEF"):
             msg = ("requested output is '%s' but must be one of 'DISP', 'VEL' "
-                   "or 'ACC'") % output
+                   ", 'ACC' or 'DEF'") % output
             raise ValueError(msg)
 
         frequencies = np.asarray(frequencies)
@@ -1774,20 +1798,18 @@ class Response(ComparingObject):
                 min_f_avail = min(f)
                 max_f_avail = max(f)
 
-                # Allow interpolation for at most two samples.
-                _d = np.abs(np.diff(f))
-                _d = _d[_d > 0].min() * 2
-                min_f_avail -= _d
-                max_f_avail += _d
-
                 if min_f < min_f_avail or max_f > max_f_avail:
                     msg = (
-                        "Cannot calculate the response as it contains a "
+                        "The response contains a "
                         "response list stage with frequencies only from "
                         "%.4f - %.4f Hz. You are requesting a response from "
-                        "%.4f - %.4f Hz.")
-                    raise ValueError(msg % (min_f_avail, max_f_avail, min_f,
-                                            max_f))
+                        "%.4f - %.4f Hz. The calculated response will contain "
+                        "extrapolation beyond the frequency band constrained "
+                        "by the response list stage. Please consider "
+                        "adjusting 'pre_filt' and/or 'water_level' during "
+                        "response removal accordingly.")
+                    warnings.warn(
+                        msg % (min_f_avail, max_f_avail, min_f, max_f))
 
                 amp = scipy.interpolate.InterpolatedUnivariateSpline(
                     f, amp, k=2)(frequencies)
@@ -2011,7 +2033,7 @@ class Response(ComparingObject):
         """
         Returns frequency response for given frequencies using evalresp.
 
-        :type frequencies: list of float
+        :type frequencies: list[float]
         :param frequencies: Discrete frequencies to calculate response for.
         :type output: str
         :param output: Output units. One of:
@@ -2022,6 +2044,12 @@ class Response(ComparingObject):
                 velocity, output unit is meters/second
             ``"ACC"``
                 acceleration, output unit is meters/second**2
+            ``"DEF"``
+                default units, the response is calculated in
+                output units/input units (last stage/first stage).
+                Useful if the units for a particular type of sensor (e.g., a
+                pressure sensor) cannot be converted to displacement, velocity
+                or acceleration.
 
         :type start_stage: int, optional
         :param start_stage: Stage sequence number of first stage that will be
@@ -2062,6 +2090,12 @@ class Response(ComparingObject):
                 velocity, output unit is meters/second
             ``"ACC"``
                 acceleration, output unit is meters/second**2
+            ``"DEF"``
+                default units, the response is calculated in
+                output units/input units (last stage/first stage).
+                Useful if the units for a particular type of sensor (e.g., a
+                pressure sensor) cannot be converted to displacement, velocity
+                or acceleration.
 
         :type start_stage: int, optional
         :param start_stage: Stage sequence number of first stage that will be
@@ -2072,7 +2106,7 @@ class Response(ComparingObject):
         :type hide_sensitivity_mismatch_warning: bool
         :param hide_sensitivity_mismatch_warning: Hide the evalresp warning
             that computed and reported sensitivities do not match.
-        :rtype: tuple of two arrays
+        :rtype: tuple(:class:`numpy.ndarray`, :class:`numpy.ndarray`)
         :returns: frequency response and corresponding frequencies
         """
         # Calculate the output frequencies.
@@ -2147,12 +2181,18 @@ class Response(ComparingObject):
         :type output: str
         :param output: Output units. One of:
 
-                ``"DISP"``
-                    displacement
-                ``"VEL"``
-                    velocity
-                ``"ACC"``
-                    acceleration
+            ``"DISP"``
+                displacement, output unit is meters
+            ``"VEL"``
+                velocity, output unit is meters/second
+            ``"ACC"``
+                acceleration, output unit is meters/second**2
+            ``"DEF"``
+                default units, the response is calculated in
+                output units/input units (last stage/first stage).
+                Useful if the units for a particular type of sensor (e.g., a
+                pressure sensor) cannot be converted to displacement, velocity
+                or acceleration.
 
         :type start_stage: int, optional
         :param start_stage: Stage sequence number of first stage that will be
@@ -2336,9 +2376,9 @@ class Response(ComparingObject):
         defined here are from
         :class:`~obspy.core.inventory.response.PolesZerosResponseStage`.
 
-        :type zeros: list of complex
+        :type zeros: list[complex]
         :param zeros: All zeros of the response to be defined.
-        :type poles: list of complex
+        :type poles: list[complex]
         :param poles: All poles of the response to be defined.
         :type stage_gain: float
         :param stage_gain: The gain value of the response [sensitivity]
@@ -2505,7 +2545,7 @@ class InstrumentPolynomial(ComparingObject):
         :param approximation_upper_bound: Upper bound of approximation.
         :type maximum_error: float
         :param maximum_error: Maximum error.
-        :type coefficients: list of floats
+        :type coefficients: list[float]
         :param coefficients: List of polynomial coefficients.
         :param input_units: string
         :param input_units: The units of the data as input from the
