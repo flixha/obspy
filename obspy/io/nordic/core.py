@@ -2161,7 +2161,7 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
             weight = ' '
         # Extract velocity: Note that horizontal slowness in quakeML is stored
         # as s/deg and Seisan stores apparent velocity in km/s
-        if pick.horizontal_slowness is not None:
+        if pick.horizontal_slowness:
             velocity = degrees2kilometers(1.0 / pick.horizontal_slowness)
         else:
             velocity = ' '
@@ -2265,7 +2265,7 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     peri_round = False
                     amp = None
                     coda_eval_mode = INV_EVALUTATION_MAPPING.get(
-                        amplitude.evaluation_mode, None)
+                        amplitude.evaluation_mode, ' ')
                 if nordic_format == 'OLD':  # only use 1st amplitude
                     break
                 amp_list.append(amp)
@@ -2342,9 +2342,9 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                 timeres=_str_conv(timeres, rounded=2).rjust(5)[0:5],
                 finalweight=finalweight, distance=distance.rjust(5)[0:5],
                 caz=_str_conv(caz).rjust(4)[0:4]))
-                # Nordic files contain an angle of incidence ("AIN") that is
-                # actually the takeoff angle from the source, and hence now
-                # properly supported as arrival.takeoff_angle.
+            # Nordic files contain an angle of incidence ("AIN") that is
+            # actually the takeoff angle from the source, and hence now
+            # properly supported as arrival.takeoff_angle.
         elif nordic_format == 'NEW':
             # Define par1, par2, & residual depending on type of observation:
             # Coda, backzimuth (add extra line), amplitude, or other phase pick
@@ -2372,12 +2372,12 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                 coda_residual = '     '
                 # TODO: weight for coda
             # Back Azimuth
-            elif backazimuth.strip() != '':  # back-azimuth
+            if backazimuth.strip() != '':  # back-azimuth
                 add_baz_line = True
-                # If the BAZ-measurement is an extra pick in addition to the 
+                # If the BAZ-measurement is an extra pick in addition to the
                 # actual phase, then don't duplicate the BAZ-line. Instead,
                 # write the BAZ-pick into a single line.
-                if pick.phase_hint.startswith('BAZ-'):
+                if pick.phase_hint and pick.phase_hint.startswith('BAZ-'):
                     add_baz_line = False
                 if len(phase_hint) <= 4:  # max total phase name length is 8
                     baz_phase_hint = 'BAZ-' + phase_hint
@@ -2422,7 +2422,10 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                             mag_hint.upper() in ['AML', 'ML']):
                         amp_phase_hints.append('IAML')
                     else:
-                        amp_phase_hints.append('A')
+                        if amplitudes[j].type is not None:
+                            amp_phase_hints.append(amplitudes[j].type)
+                        else:  # Generic amplitude
+                            amp_phase_hints.append('A')
                     amp_eval_modes.append(' ' or INV_EVALUTATION_MAPPING.get(
                         amplitude.evaluation_mode, None))
                     amp_finalweights.append('  ')
