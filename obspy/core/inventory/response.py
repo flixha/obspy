@@ -561,7 +561,7 @@ class CoefficientsTypeResponseStage(ResponseStage):
 
         sr = self.decimation_input_sample_rate
         frequencies = frequencies / sr * np.pi * 2.0
-        
+
         # Check if interpolation is required so save time for long traces.
         if len(frequencies) > 10000 and fast:
             resp_frequencies = np.linspace(frequencies[0], frequencies[-1],
@@ -586,7 +586,9 @@ class CoefficientsTypeResponseStage(ResponseStage):
                 # we get the numerator and denominator and do the math
                 # on them in their representation as magnitude and
                 # phase rather than standard complex format
-                w = resp_frequencies  # rename to be concise and match conventions
+
+                # rename to be concise and match conventions
+                w = resp_frequencies
 
                 resp = np.zeros_like(w) + 0j
                 for idx, num in enumerate(self.numerator):
@@ -604,8 +606,8 @@ class CoefficientsTypeResponseStage(ResponseStage):
         elif self.cf_transfer_function_type == "ANALOG (RADIANS/SECOND)":
             # XXX: Untested so far!
             resp = scipy.signal.freqs(
-                b=self.numerator, a=[1.0], worN=resp_frequencies\
-                    / (np.pi * 2.0))[1]
+                b=self.numerator, a=[1.0], worN=resp_frequencies
+                / (np.pi * 2.0))[1]
             gain_freq_amp = np.abs(scipy.signal.freqs(
                 b=self.numerator, a=[1.0],
                 worN=[self.stage_gain_frequency / (np.pi * 2.0)])[1])
@@ -816,7 +818,7 @@ class FIRResponseStage(ResponseStage):
 
     def get_response(self, frequencies, fast=True):
         """
-        Given Computes the 
+        Given Computes the
         """
         # Decimation blockette, e.g. gain only!
         if not len(self._coefficients):
@@ -830,7 +832,7 @@ class FIRResponseStage(ResponseStage):
             # This is the full case
             coefficients = self._coefficients
         sr = self.decimation_input_sample_rate
-        frequencies = frequencies / sr * np.pi * 2.0
+        frequencies = np.array(frequencies) / sr * np.pi * 2.0
         # Compute response for a limited number of frequencies and interpolate
         # inbetween - 10000 appears fine for high precision and speed.
         if len(frequencies) > 10000 and fast:
@@ -1180,7 +1182,7 @@ class Response(ComparingObject):
             raise ValueError("Cannot convert %s to %s." % (unit_type, output))
 
         # Figure out required integration or differentiation.
-        w = 2.0 * np.pi * frequencies * 1j
+        w = 2.0 * np.pi * np.array(frequencies) * 1j
         diff_or_int = diff_and_int_map[unit_type] - diff_and_int_map[output]
         while diff_or_int:
             if diff_or_int < 0:
@@ -2765,15 +2767,15 @@ def _check_response_interpolation(frequencies, n_frequencies_limit_for_interp):
         # the logspace has been created.
         if frequencies[0] == 0:
             resp_frequencies = np.logspace(np.log10(frequencies[1]),
-                                        np.log10(frequencies[-1]),
-                                        n_frequencies_limit_for_interp-1,
-                                        dtype=np.float64)
+                                           np.log10(frequencies[-1]),
+                                           n_frequencies_limit_for_interp-1,
+                                           dtype=np.float64)
             resp_frequencies = np.concatenate((np.zeros(1), resp_frequencies))
         else:
             resp_frequencies = np.logspace(np.log10(frequencies[1]),
-                                        np.log10(frequencies[-1]),
-                                        n_frequencies_limit_for_interp,
-                                        dtype=np.float64)
+                                           np.log10(frequencies[-1]),
+                                           n_frequencies_limit_for_interp,
+                                           dtype=np.float64)
     else:
         resp_frequencies = frequencies
 
