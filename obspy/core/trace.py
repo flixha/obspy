@@ -147,8 +147,8 @@ class Stats(AttribDict):
     defaults = {
         'sampling_rate': 1.0,
         'delta': 1.0,
-        'starttime': UTCDateTime(0),
-        'endtime': UTCDateTime(0),
+        'starttime': UTCDateTime(ns=0),
+        'endtime': UTCDateTime(ns=0),
         'npts': 0,
         'calib': 1.0,
         'network': '',
@@ -336,7 +336,10 @@ class Trace(object):
             header = {}
         header = deepcopy(header)
         header.setdefault('npts', len(data))
-        self.stats = Stats(header)
+        if isinstance(header, Stats):
+            self.stats = header
+        else:
+            self.stats = Stats(header)
         # set data without changing npts in stats object (for headonly option)
         super(Trace, self).__setattr__('data', data)
 
