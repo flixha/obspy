@@ -3,6 +3,27 @@ master
 
 Changes:
  - obspy.core:
+   * response: allow recalculating overall sensitivity even if unit type is not
+     one of VEL/ACC/DISP (see #3235)
+   * trace: 5x quicker retrieval of seed-id with trace.id / trace.get_id()
+ - obspy.io.nlloc:
+   * set origin evaluation status to "rejected" if nonlinloc reports the
+     location run as "ABORTED", "IGNORED" or "REJECTED" (see #3230)
+   * store "NLLOC" info header line in event and origin comments (see #3230)
+
+maintenance_1.4.x
+=================
+
+Changes:
+ - obspy.clients.seedlink:
+   * avoid unnecessary calls to "get_info()" on waveform requests without
+     wildcards (see #3232)
+
+1.4.0 (doi: 10.5281/zenodo.6645832)
+===================================
+
+Changes:
+ - obspy.core:
    * Minimum supported Python version is now 3.8 (see #3081, #3087)
    * Minimum supported dependency versions are now numpy 1.20, scipy 1.7 and
      matplotlib 3.3 (see #3081, #3087)
