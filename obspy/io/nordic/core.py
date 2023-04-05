@@ -284,6 +284,10 @@ def _read_origin(line):
     if line[44].strip():
         warnings.warn("Origin location indicator {0} has not been mapped "
                       "to the event".format(line[44]))
+        new_event.origins[0].extra = {}
+        new_event.origins[0].extra['model_indicator'] = {
+            'value': line[44].strip,
+            'namespace': 'https://seis.geus.net/software/seisan/node239.html'}
     if line[10] == "F":
         new_event.origins[0].time_fixed = True
     new_event.creation_info = CreationInfo(agency_id=line[45:48].strip())
@@ -1556,9 +1560,10 @@ def write_select(catalog, filename, userid='OBSP', evtype='L',
             fout.write('\n')
 
 
-def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
-                  wavefiles=None, explosion=False, nordic_format='OLD',
-                  overwrite=True, string_io=None, high_accuracy=True):
+def _write_nordic(event, filename, userid='OBSP', model_indicator=' ',
+                  evtype='L', outdir='.', wavefiles=None, explosion=False,
+                  nordic_format='OLD', overwrite=True, string_io=None,
+                  high_accuracy=True):
     """
     Write an :class:`~obspy.core.event.event.Event` to a nordic formatted
     s-file.
@@ -1679,7 +1684,7 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
         sfile = string_io
     # Write header line(s)
     sfile.write(_write_header_line(
-        event, origin, evtype, is_preferred_origin=True))
+        event, origin, model_indicator, evtype, is_preferred_origin=True))
     if high_accuracy:
         sfile.write(_write_high_accuracy_origin(origin))
     # Write hyp error line
@@ -1690,8 +1695,8 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
     # Write origin lines for additional origins
     for add_origin in event.origins:
         if not add_origin == origin:
-            sfile.write(_write_header_line(event, add_origin, evtype,
-                                           is_preferred_origin=False))
+            sfile.write(_write_header_line(
+                event, add_origin, ' ', evtype, is_preferred_origin=False))
             if high_accuracy:
                 sfile.write(_write_high_accuracy_origin(add_origin))
     # Write fault plane solution
@@ -1742,7 +1747,8 @@ def _write_nordic(event, filename, userid='OBSP', evtype='L', outdir='.',
         return
 
 
-def _write_header_line(event, origin, evtype, is_preferred_origin=True):
+def _write_header_line(event, origin, model_indicator, evtype,
+                       is_preferred_origin=True):
     """
     Write one Seisan header line for origin. Needs to treat the preferred
     origin a bit differently than additional origins.
@@ -1838,12 +1844,13 @@ def _write_header_line(event, origin, evtype, is_preferred_origin=True):
 
     lines = []
     lines.append(
-        " {0} {1}{2} {3}{4} {5}.{6} {7}{8}{9}{10}  {11}{12}{13}{14}{15}{16}"
-        "{17}{18}{19}{20}{21}{22}1\n".format(
+        " {0} {1}{2} {3}{4} {5}.{6}{7}{8}{9}{10}{11}  {12}{13}{14}{15}{16}{17}"
+        "{18}{19}{20}{21}{22}{23}1\n".format(
             evtime.year, str(evtime.month).rjust(2), str(evtime.day).rjust(2),
             str(evtime.hour).rjust(2), str(evtime.minute).rjust(2),
             str(evtime.second).rjust(2), str(evtime.microsecond).ljust(1)[0:1],
-            evtype.ljust(2), lat.rjust(7), lon.rjust(8), depth.rjust(5),
+            model_indicator[0], evtype.ljust(2),
+            lat.rjust(7), lon.rjust(8), depth.rjust(5),
             agency, ksta.rjust(3), timerms.rjust(4),
             conv_mags[0]['mag'].rjust(4), conv_mags[0]['type'].rjust(1),
             conv_mags[0]['agency'][0:3].rjust(3),
