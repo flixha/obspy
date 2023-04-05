@@ -286,7 +286,7 @@ def _read_origin(line):
                       "to the event".format(line[44]))
         new_event.origins[0].extra = {}
         new_event.origins[0].extra['model_indicator'] = {
-            'value': line[44].strip,
+            'value': line[44].strip(),
             'namespace': 'https://seis.geus.net/software/seisan/node239.html'}
     if line[10] == "F":
         new_event.origins[0].time_fixed = True
