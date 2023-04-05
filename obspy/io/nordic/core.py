@@ -1247,11 +1247,13 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime, **kwargs):
                 # correctly
                 ref_mag = [mag for mag in new_event.magnitudes
                            if mag.magnitude_type == 'ML'
+                           and mag.creation_info
                            and mag.creation_info.agency_id
                            == pick.creation_info.agency_id]
                 if len(ref_mag) == 0:
                     ref_mag = [mag for mag in new_event.magnitudes
                                if mag.magnitude_type == 'Mw'
+                               and mag.creation_info
                                and mag.creation_info.agency_id
                                == pick.creation_info.agency_id]
                     if len(ref_mag) > 0:
