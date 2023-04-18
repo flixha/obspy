@@ -10,7 +10,8 @@ Provides the Network class.
     (https://www.gnu.org/copyleft/lesser.html)
 """
 import copy
-import fnmatch
+# import fnmatch
+import wcmatch.fnmatch as fnmatch
 import warnings
 
 from obspy.core.util.obspy_types import ObsPyException, ZeroSamplingRate
@@ -464,7 +465,8 @@ class Network(BaseNode):
             # skip if any given criterion is not matched
             if station is not None:
                 if not fnmatch.fnmatch(sta.code.upper(),
-                                       station.upper()):
+                                       station.upper(),
+                                       flags=fnmatch.EXTMATCH):
                     continue
             if any([t is not None for t in (time, starttime, endtime)]):
                 if not sta.is_active(time=time, starttime=starttime,
