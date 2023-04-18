@@ -1248,12 +1248,14 @@ def _read_picks_nordic_new(pickline, new_event, header, evtime, **kwargs):
                 ref_mag = [mag for mag in new_event.magnitudes
                            if mag.magnitude_type == 'ML'
                            and mag.creation_info
+                           and pick.creation_info
                            and mag.creation_info.agency_id
                            == pick.creation_info.agency_id]
                 if len(ref_mag) == 0:
                     ref_mag = [mag for mag in new_event.magnitudes
                                if mag.magnitude_type == 'Mw'
                                and mag.creation_info
+                               and pick.creation_info
                                and mag.creation_info.agency_id
                                == pick.creation_info.agency_id]
                     if len(ref_mag) > 0:
@@ -2488,9 +2490,9 @@ def nordpick(event, high_accuracy=True, nordic_format='OLD'):
                     amp_finalweights.append('  ')
                     # Amplitudes can be written without exponent; gives better
                     # precision for small numbers.
-                    amp_str = str("{:7.5g}".format(amp))
+                    amp_str = str("{:7.3g}".format(amp))
                     # If exponent is needed, limit width:
-                    if 'e' in amp_str:
+                    if 'e' in amp_str or len(amp_str) > 7:
                         amp_str = str("{:7.2g}".format(amp))
                     # With scientific e-notation, check if there is a decimal
                     # point. Otherwise Fortran may read the value incorrectly
